@@ -1,11 +1,14 @@
 """Convert text passages into 384-dimensional MiniLM vectors."""
 
 from functools import lru_cache
-from sentence_transformers import SentenceTransformer
 
 @lru_cache(maxsize=1)
 def model():
-    return SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+    # Load the ML runtime only when an upload or chat actually needs an
+    # embedding. This keeps the API and health check responsive at startup.
+    from sentence_transformers import SentenceTransformer
+
+    return SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2', device='cpu')
 
 def embed_texts(texts: list[str]):
     """Generate semantic vectors for the supplied text passages."""
