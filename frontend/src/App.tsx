@@ -167,34 +167,44 @@ export default function App() {
     }
   }
 
-  /** Upload one file and let the backend extract and index its contents. */
+  /** Upload selected files one by one and report any that fail. */
   async function handleUpload(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file || !selectedKnowledgeBaseId) return;
+    const files = Array.from(event.target.files ?? []);
+    if (!files.length || !selectedKnowledgeBaseId) return;
 
     setIsBusy(true);
-    setBusyMessage("Uploading and indexing your document. The first upload may take a little longer...");
+    setBusyMessage(`Preparing ${files.length} file${files.length === 1 ? "" : "s"}...`);
     setErrorMessage("");
 
+    let uploaded = 0;
+    const failures: string[] = [];
     try {
-      const formData = new FormData();
-      formData.append("file", file);
+      for (const [index, file] of files.entries()) {
+        setBusyMessage(`Uploading file ${index + 1} of ${files.length}: ${file.name}`);
+        const formData = new FormData();
+        formData.append("file", file);
 
-      const response = await request<DocumentUploadResponse>(
-        `/knowledge-bases/${selectedKnowledgeBaseId}/documents`,
-        token,
-        { method: "POST", body: formData }
-      );
-
-      await refreshDocuments();
-
-      if (response.document.status === "failed") {
-        setErrorMessage(
-          response.document.processing_error ?? "Document processing failed."
-        );
+        try {
+          const response = await request<DocumentUploadResponse>(
+            `/knowledge-bases/${selectedKnowledgeBaseId}/documents`,
+            token,
+            { method: "POST", body: formData }
+          );
+          if (response.document.status === "ready") {
+            uploaded += 1;
+          } else {
+            failures.push(`${file.name}: ${response.document.processing_error ?? "Processing failed."}`);
+          }
+        } catch (error) {
+          failures.push(`${file.name}: ${getErrorMessage(error)}`);
+        }
       }
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      await refreshDocuments();
+      if (failures.length) {
+        const shownFailures = failures.slice(0, 3).join("; ");
+        const remaining = failures.length > 3 ? `; and ${failures.length - 3} more` : "";
+        setErrorMessage(`${uploaded} of ${files.length} files uploaded. ${shownFailures}${remaining}`);
+      }
     } finally {
       setIsBusy(false);
       event.target.value = "";
@@ -404,7 +414,7 @@ export default function App() {
               <strong>Make a folder.</strong> Enter a name on the left and press <strong>+</strong>.
             </li>
             <li>
-              <strong>Add a file.</strong> Choose a PDF, Word file (DOCX), or text file. Wait until its status says <strong>ready</strong>.
+              <strong>Add files.</strong> Choose one or more PDF, Word (DOCX), or text files. Wait until each says <strong>ready</strong>.
             </li>
             <li>
               <strong>Ask a question.</strong> Type in the box on the right and press the arrow. DocuMind answers using files in the selected folder.
@@ -428,11 +438,12 @@ export default function App() {
 
             <label className={`upload ${isBusy ? "disabled" : ""}`}>
               <Upload size={21} />
-              <strong>Upload a document</strong>
-              <small>PDF, DOCX, TXT · up to 20 MB</small>
+              <strong>Upload one or more files</strong>
+              <small>PDF, DOCX, or TXT · server size limit applies to each file</small>
               <input
                 type="file"
                 accept=".pdf,.docx,.txt"
+                multiple
                 onChange={handleUpload}
                 disabled={!selectedKnowledgeBaseId || isBusy}
               />

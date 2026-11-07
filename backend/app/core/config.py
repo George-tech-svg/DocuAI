@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     FRONTEND_ORIGIN: str = Field(
         validation_alias=AliasChoices('FRONTEND_ORIGIN', 'FRONTEND_URL'),
     )
+    FRONTEND_ORIGINS: str = ''
     MAX_UPLOAD_MB: int = Field(
         default=10,
         validation_alias=AliasChoices('MAX_UPLOAD_MB', 'MAX_UPLOAD_SIZE_MB'),
