@@ -166,6 +166,8 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
 .banner button { float: right; border: 0; background: none; color: #a8333b; }
 .document-error { margin-top: 4px; white-space: normal; }
 
+.mobile-topbar, .sidebar-backdrop, .sidebar-close { display: none; }
+
 @media (max-width: 900px) {
   .shell { flex-direction: column; }
   aside { flex: 0 0 auto; width: 100%; max-height: 34dvh; padding: 12px 16px; gap: 8px; }
@@ -362,4 +364,127 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
     padding: 16px;
     padding-bottom: max(16px, env(safe-area-inset-bottom));
   }
+}
+
+/* On phones, keep the workspace chrome compact and move folders into a drawer. */
+@media (max-width: 700px) {
+  .mobile-topbar {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 54px;
+    padding: max(6px, env(safe-area-inset-top)) 14px 6px;
+    background: #e4edf2;
+    border-bottom: 1px solid #bfd0dc;
+  }
+
+  .mobile-topbar .brand { min-width: 0; font-size: 18px; }
+  .mobile-topbar .brand svg { width: 21px; height: 21px; flex: 0 0 auto; }
+
+  .folder-menu-trigger {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    max-width: 48%;
+    min-height: 38px;
+    padding: 7px 10px;
+    border: 1px solid #bfd0dc;
+    border-radius: 9px;
+    background: #f1f4f1;
+    color: #315f7d;
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .folder-menu-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .sidebar-backdrop {
+    position: fixed;
+    z-index: 30;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: #172b3b70;
+  }
+
+  .shell > aside {
+    position: fixed;
+    z-index: 31;
+    inset: 0 auto 0 0;
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: 12px;
+    width: min(86vw, 320px);
+    height: 100dvh;
+    max-height: none;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: max(18px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+    border-right: 1px solid #bfd0dc;
+    border-bottom: 0;
+    box-shadow: 12px 0 36px #172b3b26;
+    transform: translateX(-105%);
+    visibility: hidden;
+    pointer-events: none;
+    transition: transform 180ms ease;
+  }
+
+  .shell > aside.mobile-sidebar-open {
+    transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
+  }
+  .shell > aside .brand { padding: 4px 38px 4px 2px; font-size: 19px; }
+  .shell > aside .brand svg { width: 22px; height: 22px; }
+  .shell > aside .sidebar-close {
+    position: absolute;
+    top: max(14px, env(safe-area-inset-top));
+    right: 14px;
+    display: grid;
+    width: 36px;
+    height: 36px;
+    place-items: center;
+    border: 0;
+    border-radius: 9px;
+    background: #d8e5ec;
+    color: #36596f;
+  }
+
+  .shell > aside .smalltitle { display: block; margin-top: 8px; }
+  .shell > aside .newkb { grid-area: auto; }
+  .shell > aside .newkb input { height: 42px; }
+  .shell > aside .newkb button { width: 42px; height: 42px; }
+  .shell > aside nav {
+    grid-area: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 0;
+    max-width: none;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 0;
+  }
+  .shell > aside nav button {
+    flex: 0 0 auto;
+    max-width: none;
+    min-height: 44px;
+    white-space: normal;
+  }
+  .shell > aside .sidebottom {
+    grid-area: auto;
+    align-self: stretch;
+    margin-top: auto;
+    padding-top: 12px;
+  }
+  .shell > aside .workspace-label { display: flex; }
+  .shell > aside .sidebottom button { width: 100%; }
 }

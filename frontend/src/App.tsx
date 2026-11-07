@@ -4,6 +4,7 @@ import {
   BookOpen,
   FileText,
   LogOut,
+  Menu,
   MessageCircle,
   Plus,
   Send,
@@ -41,6 +42,7 @@ export default function App() {
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("");
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [isUploadPanelOpen, setIsUploadPanelOpen] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [newKnowledgeBaseName, setNewKnowledgeBaseName] = useState("");
 
   // Chat messages and current conversation.
@@ -110,6 +112,15 @@ export default function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, isBusy]);
 
+  useEffect(() => {
+    if (!isMobileSidebarOpen) return;
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setIsMobileSidebarOpen(false);
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [isMobileSidebarOpen]);
+
   /** Register a new user or sign in an existing user. */
   async function handleAuthentication(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -147,6 +158,7 @@ export default function App() {
     setDocuments([]);
     setMessages([]);
     setConversationId(null);
+    setIsMobileSidebarOpen(false);
   }
 
   /** Create a private knowledge base for the current user. */
@@ -167,6 +179,7 @@ export default function App() {
       setNewKnowledgeBaseName("");
       await refreshKnowledgeBases();
       setSelectedKnowledgeBaseId(created.id);
+      setIsMobileSidebarOpen(false);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -364,10 +377,41 @@ export default function App() {
   // After login, show the sidebar, document list, and chat panel.
   return (
     <div className="shell">
-      <aside>
+      <div className="mobile-topbar">
         <div className="brand">
           <BookOpen /> DocuMind <span>AI</span>
         </div>
+        <button
+          className="folder-menu-trigger"
+          type="button"
+          aria-label="Open folder sidebar"
+          aria-expanded={isMobileSidebarOpen}
+          onClick={() => setIsMobileSidebarOpen(true)}
+        >
+          <Menu size={19} />
+          <span>{selectedKnowledgeBase?.name ?? "Folders"}</span>
+        </button>
+      </div>
+
+      {isMobileSidebarOpen && (
+        <button
+          className="sidebar-backdrop"
+          type="button"
+          aria-label="Close folder sidebar"
+          onClick={() => setIsMobileSidebarOpen(false)}
+        />
+      )}
+
+      <aside className={isMobileSidebarOpen ? "mobile-sidebar-open" : ""}>
+        <div className="brand">
+          <BookOpen /> DocuMind <span>AI</span>
+        </div>
+        <button
+          className="sidebar-close"
+          type="button"
+          aria-label="Close folder sidebar"
+          onClick={() => setIsMobileSidebarOpen(false)}
+        ><X size={20} /></button>
 
         <div className="smalltitle">FOLDERS</div>
 
@@ -389,7 +433,10 @@ export default function App() {
               className={
                 selectedKnowledgeBaseId === knowledgeBase.id ? "selected" : ""
               }
-              onClick={() => setSelectedKnowledgeBaseId(knowledgeBase.id)}
+              onClick={() => {
+                setSelectedKnowledgeBaseId(knowledgeBase.id);
+                setIsMobileSidebarOpen(false);
+              }}
             >
               <BookOpen size={16} />
               {knowledgeBase.name}
