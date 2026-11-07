@@ -39,3 +39,5 @@ def delete(kb_id: UUID, user: User=Depends(current_user), db: Session=Depends(ge
         delete_knowledge_base(db, user.id, kb_id)
     except KnowledgeBaseNotFoundError:
         raise HTTPException(404, 'Knowledge base not found')
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc)) from exc

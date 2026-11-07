@@ -18,5 +18,13 @@ def test_reject_invalid_pdf():
     else:
         assert False
 
-def test_strong_password():
-    assert UserRegister(full_name='Example User', email='a@example.com', password='StrongPass123!')
+def test_four_digit_password_is_valid():
+    assert UserRegister(full_name='Example User', email='a@example.com', password='1234')
+
+def test_password_shorter_than_four_is_rejected():
+    from pydantic import ValidationError
+    try:
+        UserRegister(full_name='Example User', email='a@example.com', password='123')
+    except ValidationError:
+        return
+    assert False

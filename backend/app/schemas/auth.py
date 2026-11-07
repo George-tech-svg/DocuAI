@@ -2,19 +2,13 @@
 
 from datetime import datetime
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 class UserRegister(BaseModel):
     full_name: str = Field(min_length=2, max_length=150)
     email: EmailStr
-    password: str = Field(min_length=12, max_length=128)
-
-    @field_validator('password')
-    @classmethod
-    def strong_password(cls, v):
-        if not (any((c.isupper() for c in v)) and any((c.islower() for c in v)) and any((c.isdigit() for c in v)) and any((not c.isalnum() for c in v))):
-            raise ValueError('Password must contain uppercase, lowercase, digit and special character')
-        return v
+    # Numeric-only passwords are valid; enforce only the advertised minimum.
+    password: str = Field(min_length=4, max_length=128)
 
 class UserLogin(BaseModel):
     email: EmailStr

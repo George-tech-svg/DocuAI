@@ -12,11 +12,12 @@ from app.services.file_validation import validate_upload
 from app.services.extraction import extract_pages
 from app.services.chunking import chunk_pages
 from app.services.embeddings import embed_texts
-from app.services.storage import store_file
+from app.services.storage import store_file, delete_file
 from app.core.config import get_settings
 
 def owned_kb(db, user_id, kb_id):
     """Ensure the requested knowledge base belongs to the current user."""
+    stored = None
     try:
         return get_knowledge_base(db, user_id, kb_id)
     except KnowledgeBaseNotFoundError:
@@ -47,10 +48,9 @@ def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes):
         for i, ((page, content), embedding) in enumerate(zip(chunks, vectors)):
             db.add(DocumentChunk(document_id=doc.id, chunk_index=i, page_number=page, content=content, embedding=embedding))
         stored = store_file(name, data)
-        if stored:
-            doc.cloudinary_public_id = stored['public_id']
-            doc.cloudinary_resource_type = stored['resource_type']
-            doc.storage_url = stored['url']
+        doc.cloudinary_public_id = stored['public_id']
+        doc.cloudinary_resource_type = stored['resource_type']
+        doc.storage_url = stored['url']
         doc.page_count = len(pages)
         doc.chunk_count = len(chunks)
         doc.status = 'ready'
@@ -59,9 +59,14 @@ def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes):
         db.refresh(doc)
     except Exception as exc:
         db.rollback()
+        if stored:
+            try:
+                delete_file(stored['public_id'], stored['resource_type'])
+            except Exception:
+                pass
         doc = db.get(Document, doc.id)
         doc.status = 'failed'
-        doc.processing_error = 'Processing failed. Check the server logs for details.'
+        doc.processing_error = str(exc)[:500] or 'Document processing failed.'
         db.commit()
         db.refresh(doc)
     return doc

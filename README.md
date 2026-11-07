@@ -31,6 +31,12 @@ Review `backend/ENV_SETUP.md` to confirm the local credential names. Then run:
 python -m uvicorn app.main:app --reload
 ```
 
+## Create or update the Neon schema
+
+After installing the backend requirements and configuring `DATABASE_URL` for Neon, run `npm run migrate` from the repository root or from `frontend/`. This applies the versioned Alembic migrations, creates missing tables, and safely adds compatible missing columns. It does not drop tables or rows. If a required new column needs real values for existing rows, the migration stops and identifies the column so it can be backfilled before rerunning.
+
+The old `backend/sql/001_schema.sql` is kept as a reference for a new empty database; use the migration command for normal setup and schema changes.
+
 Swagger: http://127.0.0.1:8000/docs
 
 ## Frontend (second terminal)
@@ -58,5 +64,6 @@ Frontend: http://localhost:3000
 - The local PostgreSQL connection and pgvector extension were checked read-only, the frontend production build succeeds, and backend unit tests pass.
 - PDF extraction handles text PDFs; scanned PDFs require OCR, which is not included.
 - File processing currently runs during the upload request; for larger deployments, use a background job queue.
-- Original file storage in Cloudinary is optional. Without Cloudinary credentials, document text and embeddings are still stored in the database, but the original upload is not retained.
+- Original files are stored in Cloudinary, while document metadata, extracted text, embeddings, accounts, and conversations are stored in Neon. Uploads fail if Cloudinary storage is not configured. Deleting a document or knowledge base also removes the associated Cloudinary originals.
+- For deployment, set `VITE_API_BASE_URL` in Vercel to the deployed FastAPI URL ending in `/api/v1`. Set `FRONTEND_URL` on the backend to the deployed Vercel origin. Local `.env` values do not configure production deployments.
 - Review the schema and ownership/deletion behavior before migrating an existing database.

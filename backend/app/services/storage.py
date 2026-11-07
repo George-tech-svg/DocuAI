@@ -1,14 +1,24 @@
-"""Optionally upload original documents to Cloudinary."""
+"""Persist original documents in Cloudinary."""
 
 import cloudinary
 import cloudinary.uploader
 from app.core.config import get_settings
 
 def store_file(filename: str, data: bytes):
-    """Upload a copy to Cloudinary when storage credentials are configured."""
+    """Upload a document and fail explicitly if Cloudinary is not configured."""
     s = get_settings()
     if not (s.CLOUDINARY_CLOUD_NAME and s.CLOUDINARY_API_KEY and s.CLOUDINARY_API_SECRET):
-        return None
+        raise RuntimeError('Cloudinary storage is not configured')
     cloudinary.config(cloud_name=s.CLOUDINARY_CLOUD_NAME, api_key=s.CLOUDINARY_API_KEY, api_secret=s.CLOUDINARY_API_SECRET, secure=True)
     result = cloudinary.uploader.upload(data, resource_type='raw', folder='documind', use_filename=False, unique_filename=True)
     return {'public_id': result['public_id'], 'resource_type': result['resource_type'], 'url': result['secure_url']}
+
+def delete_file(public_id: str, resource_type: str = 'raw'):
+    """Delete a previously stored original from Cloudinary."""
+    s = get_settings()
+    if not (s.CLOUDINARY_CLOUD_NAME and s.CLOUDINARY_API_KEY and s.CLOUDINARY_API_SECRET):
+        raise RuntimeError('Cloudinary storage is not configured')
+    cloudinary.config(cloud_name=s.CLOUDINARY_CLOUD_NAME, api_key=s.CLOUDINARY_API_KEY, api_secret=s.CLOUDINARY_API_SECRET, secure=True)
+    result = cloudinary.uploader.destroy(public_id, resource_type=resource_type, invalidate=True)
+    if result.get('result') not in {'ok', 'not found'}:
+        raise RuntimeError('Cloudinary could not delete the stored document')

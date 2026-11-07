@@ -48,6 +48,7 @@ export default function App() {
 
   // Shared feedback for network operations.
   const [isBusy, setIsBusy] = useState(false);
+  const [busyMessage, setBusyMessage] = useState("Processing...");
   const [errorMessage, setErrorMessage] = useState("");
 
   /** Load the current user's knowledge bases from the API. */
@@ -106,6 +107,7 @@ export default function App() {
   async function handleAuthentication(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsBusy(true);
+    setBusyMessage(isRegistering ? "Creating your account..." : "Signing you in...");
     setErrorMessage("");
 
     try {
@@ -146,6 +148,7 @@ export default function App() {
     if (!newKnowledgeBaseName.trim()) return;
 
     setIsBusy(true);
+    setBusyMessage("Preparing your knowledge base...");
     setErrorMessage("");
 
     try {
@@ -170,6 +173,7 @@ export default function App() {
     if (!file || !selectedKnowledgeBaseId) return;
 
     setIsBusy(true);
+    setBusyMessage("Uploading and indexing your document. The first upload may take a little longer...");
     setErrorMessage("");
 
     try {
@@ -225,6 +229,7 @@ export default function App() {
       { role: "user", content: submittedQuestion },
     ]);
     setIsBusy(true);
+    setBusyMessage("Searching your documents and preparing an answer...");
     setErrorMessage("");
 
     try {
@@ -287,12 +292,12 @@ export default function App() {
           <input
             type="password"
             required
-            minLength={isRegistering ? 12 : undefined}
+            minLength={isRegistering ? 4 : undefined}
             maxLength={isRegistering ? 128 : undefined}
             autoComplete={isRegistering ? "new-password" : "current-password"}
             title={
               isRegistering
-                ? "Use 12–128 characters, including uppercase and lowercase letters, a number, and a special character."
+                ? "Use at least 4 characters. Numbers are allowed."
                 : undefined
             }
             placeholder="Password"
@@ -302,7 +307,7 @@ export default function App() {
 
           {isRegistering && (
             <p className="muted">
-              Password must be 12–128 characters and include uppercase and lowercase letters, a number, and a special character.
+              Use at least 4 characters. Numbers are allowed.
             </p>
           )}
 
@@ -416,6 +421,9 @@ export default function App() {
                 disabled={!selectedKnowledgeBaseId || isBusy}
               />
             </label>
+            {!selectedKnowledgeBaseId && (
+              <p className="muted">Create a knowledge base from the left panel before uploading.</p>
+            )}
 
             <div className="filelist">
               {documents.map((document) => (
@@ -482,7 +490,7 @@ export default function App() {
                 </div>
               ))}
 
-              {isBusy && <div className="muted">Processing…</div>}
+              {isBusy && <div className="muted" role="status" aria-live="polite">{busyMessage}</div>}
             </div>
 
             <form className="composer" onSubmit={handleSendQuestion}>

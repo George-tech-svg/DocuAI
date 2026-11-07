@@ -1,0 +1,7 @@
+{
+  "name": "documind-ai",
+  "private": true,
+  "scripts": {
+    "migrate": "node scripts/migrate.mjs"
+  }
+}

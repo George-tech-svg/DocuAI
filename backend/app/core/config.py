@@ -17,7 +17,6 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: str = ''
     DEEPSEEK_MODEL: str = 'deepseek-chat'
     FRONTEND_ORIGIN: str = Field(
-        default='http://localhost:3000',
         validation_alias=AliasChoices('FRONTEND_ORIGIN', 'FRONTEND_URL'),
     )
     MAX_UPLOAD_MB: int = Field(

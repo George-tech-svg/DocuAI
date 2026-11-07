@@ -3,6 +3,7 @@
 import json
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.db.session import get_db
@@ -24,7 +25,8 @@ async def chat(data: ChatRequest, user: User=Depends(current_user), db: Session=
         conversation = db.scalar(select(Conversation).where(Conversation.id == data.conversation_id, Conversation.user_id == user.id, Conversation.knowledge_base_id == data.knowledge_base_id))
         if conversation is None:
             raise HTTPException(404, 'Conversation not found')
-    hits = retrieve(db, data.knowledge_base_id, data.question)
+    # First-time model loading and vector generation are CPU/network intensive.
+    hits = await run_in_threadpool(retrieve, db, data.knowledge_base_id, data.question)
     sources = [Source(document_id=doc_id, filename=name, page_number=chunk.page_number, excerpt=chunk.content[:300]) for chunk, name, doc_id in hits]
     context = '\n\n'.join((f'[{i}] {name}, page {chunk.page_number}: {chunk.content}' for i, (chunk, name, _) in enumerate(hits, 1)))
     answer = await answer_question(data.question, context) if hits else 'No searchable document content found in this knowledge base.'

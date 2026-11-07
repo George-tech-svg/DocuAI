@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.models.knowledge_base import KnowledgeBase
 from app.schemas.knowledge_base import KnowledgeBaseCreate, KnowledgeBaseUpdate
+from app.services.storage import delete_file
 
 class KnowledgeBaseNotFoundError(Exception):
     pass
@@ -35,5 +36,13 @@ def update_knowledge_base(db: Session, user_id: UUID, knowledge_base_id: UUID, d
 
 def delete_knowledge_base(db: Session, user_id: UUID, knowledge_base_id: UUID):
     kb = get_knowledge_base(db, user_id, knowledge_base_id)
+    # Remove external originals before cascading their Neon metadata/chunks.
+    # Keep the knowledge base intact if Cloudinary cannot complete deletion.
+    for document in kb.documents:
+        if document.cloudinary_public_id:
+            try:
+                delete_file(document.cloudinary_public_id, document.cloudinary_resource_type or 'raw')
+            except Exception as exc:
+                raise RuntimeError('Could not delete all original files from Cloudinary') from exc
     db.delete(kb)
     db.commit()

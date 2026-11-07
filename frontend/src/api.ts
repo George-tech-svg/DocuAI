@@ -3,7 +3,7 @@
  * The server URL can be configured when building the frontend.
  */
 export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000/api/v1";
+  import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 
 /** Turn unknown JavaScript exceptions into readable messages. */
 export function getErrorMessage(error: unknown): string {
