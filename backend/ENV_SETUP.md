@@ -22,6 +22,16 @@ The Vite frontend reads `VITE_API_BASE_URL` at build time. Set it in the Vercel 
 
 Set all service variables in the backend hosting provider as well as the appropriate Vercel variables. Local `.env` files do not configure deployed services.
 
+For Render, keep the service root directory set to `backend` and append
+`&& python scripts/preload_embedding_model.py` to its existing build command
+after dependency installation. For example, use
+`pip install -r requirements.txt && python scripts/preload_embedding_model.py`.
+This downloads the MiniLM embedding model while building the release, so a
+user's first upload or chat request does not need to fetch model files from
+Hugging Face. The cache is kept in the build artifact and is excluded from Git.
+If model preloading fails during the build, inspect that build error; the live
+service would otherwise try the same download during a request.
+
 For the current production frontend, set Render's `FRONTEND_URL` to `https://docu-ai-sage.vercel.app` (no trailing slash). That production origin is also included as a code fallback. Add extra preview origins to `FRONTEND_ORIGINS` as a comma-separated list if needed, then redeploy the Render service.
 
 Ready-to-import production settings are in `backend/.env.render`; in Render, open the service's **Environment** page and choose **Add from .env**, select that file, then save and deploy. The file is gitignored because it contains credentials copied from the existing local environment. `frontend/.env.vercel` contains only the public API base URL. Vercel's dashboard does not import a `.env` file; add that single `VITE_API_BASE_URL` value under **Project Settings → Environment Variables** for Production (and Preview if needed), then redeploy.

@@ -2,9 +2,12 @@
 
 from functools import lru_cache
 import logging
+from pathlib import Path
 from time import perf_counter
 
 logger = logging.getLogger(__name__)
+MODEL_ID = 'sentence-transformers/all-MiniLM-L6-v2'
+MODEL_CACHE_DIR = Path(__file__).resolve().parents[2] / '.model-cache'
 
 @lru_cache(maxsize=1)
 def model():
@@ -14,7 +17,11 @@ def model():
     logger.warning('Loading the sentence embedding model.')
     from sentence_transformers import SentenceTransformer
 
-    instance = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2', device='cpu')
+    instance = SentenceTransformer(
+        MODEL_ID,
+        device='cpu',
+        cache_folder=str(MODEL_CACHE_DIR),
+    )
     logger.warning('Sentence embedding model loaded in %.1f seconds.', perf_counter() - started)
     return instance
 

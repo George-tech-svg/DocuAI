@@ -3,6 +3,7 @@
 backend/.env.render
 frontend/.env.vercel
 **/.venv*/
+backend/.model-cache/
 **/venv/
 **/node_modules/
 **/dist/
