@@ -14,6 +14,7 @@ from app.models.message import Message
 from app.schemas.chat import ChatRequest, ChatResponse, Source, ConversationResponse, MessageResponse
 from app.services.document_service import owned_kb
 from app.services.retrieval import retrieve
+from app.services.embeddings import embed_texts
 from app.services.llm import answer_question
 router = APIRouter(tags=['Chat'])
 
@@ -25,8 +26,10 @@ async def chat(data: ChatRequest, user: User=Depends(current_user), db: Session=
         conversation = db.scalar(select(Conversation).where(Conversation.id == data.conversation_id, Conversation.user_id == user.id, Conversation.knowledge_base_id == data.knowledge_base_id))
         if conversation is None:
             raise HTTPException(404, 'Conversation not found')
-    # First-time model loading and vector generation are CPU/network intensive.
-    hits = await run_in_threadpool(retrieve, db, data.knowledge_base_id, data.question)
+    # Keep model initialization/vectorization off the async loop, but run the
+    # SQLAlchemy session query on the request thread that owns this DB session.
+    query_vector = (await run_in_threadpool(embed_texts, [data.question]))[0]
+    hits = retrieve(db, data.knowledge_base_id, data.question, query_vector=query_vector)
     sources = [Source(document_id=doc_id, filename=name, page_number=chunk.page_number, excerpt=chunk.content[:300]) for chunk, name, doc_id in hits]
     context = '\n\n'.join((f'[{i}] {name}, page {chunk.page_number}: {chunk.content}' for i, (chunk, name, _) in enumerate(hits, 1)))
     answer = await answer_question(data.question, context) if hits else 'No searchable document content found in this knowledge base.'

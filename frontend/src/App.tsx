@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import {
   BookOpen,
@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   Trash2,
   Upload,
+  X,
 } from "lucide-react";
 
 import { getErrorMessage, request } from "./api";
@@ -39,12 +40,14 @@ export default function App() {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("");
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
+  const [isUploadPanelOpen, setIsUploadPanelOpen] = useState(false);
   const [newKnowledgeBaseName, setNewKnowledgeBaseName] = useState("");
 
   // Chat messages and current conversation.
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Shared feedback for network operations.
   const [isBusy, setIsBusy] = useState(false);
@@ -102,6 +105,10 @@ export default function App() {
     setMessages([]);
     setConversationId(null);
   }, [token, selectedKnowledgeBaseId]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, isBusy]);
 
   /** Register a new user or sign in an existing user. */
   async function handleAuthentication(event: FormEvent<HTMLFormElement>) {
@@ -399,143 +406,105 @@ export default function App() {
       </aside>
 
       <main>
-        <header>
-          <div>
-            <h2>{selectedKnowledgeBase?.name ?? "Your workspace"}</h2>
-            <p>Add files, then ask questions about them.</p>
+        <section className="chat">
+          <div className="chat-heading">
+            <div>
+              <h2>{selectedKnowledgeBase?.name ?? "Your workspace"}</h2>
+              <p>Ask questions about files in this folder.</p>
+            </div>
+            <div className="chat-actions">
+              <span className="pill">{documents.length} file{documents.length === 1 ? "" : "s"}</span>
+              <button className="upload-trigger" onClick={() => setIsUploadPanelOpen(true)} disabled={!selectedKnowledgeBaseId}>
+                <Upload size={17} /> Add files
+              </button>
+            </div>
           </div>
-          <div className="pill">Your files</div>
-        </header>
 
-        <section className="quick-guide" aria-labelledby="guide-title">
-          <h3 id="guide-title">How to use DocuMind</h3>
-          <ol>
-            <li>
-              <strong>Make a folder.</strong> Enter a name on the left and press <strong>+</strong>.
-            </li>
-            <li>
-              <strong>Add files.</strong> Choose one or more PDF, Word (DOCX), or text files. Wait until each says <strong>ready</strong>.
-            </li>
-            <li>
-              <strong>Ask a question.</strong> Type in the box on the right and press the arrow. DocuMind answers using files in the selected folder.
-            </li>
-          </ol>
-          <p>To use a different folder, select it from the list on the left.</p>
+          {errorMessage && (
+            <div className="error banner" role="alert">
+              {errorMessage}
+              <button aria-label="Dismiss error" onClick={() => setErrorMessage("")}><X size={16} /></button>
+            </div>
+          )}
+
+          <div className="messages">
+            {messages.length === 0 && (
+              <div className="empty">
+                <BookOpen size={36} />
+                <h2>Ask about your files</h2>
+                <p>{documents.length ? "Ask a question to search this folder." : "Add a file, then ask a question about it."}</p>
+              </div>
+            )}
+            {messages.map((message, index) => (
+              <div key={index} className={`bubble ${message.role}`}>
+                <div>{message.content}</div>
+                {message.sources && message.sources.length > 0 && (
+                  <div className="sources">
+                    <strong>Sources</strong>
+                    {message.sources.map((source, sourceIndex) => (
+                      <div className="source" key={`${source.document_id}-${sourceIndex}`}>
+                        <span className="source-title">
+                          {source.filename}{source.page_number != null ? ` · page ${source.page_number}` : ""}
+                        </span>
+                        <p>{source.excerpt}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+            {isBusy && <div className="muted" role="status" aria-live="polite">{busyMessage}</div>}
+            <div ref={messagesEndRef} />
+          </div>
+
+          <form className="composer" onSubmit={handleSendQuestion}>
+            <input
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              placeholder="Ask a question about your documents..."
+              disabled={!selectedKnowledgeBaseId || isBusy}
+            />
+            <button disabled={!selectedKnowledgeBaseId || isBusy || !question.trim()} aria-label="Send question">
+              <Send size={19} />
+            </button>
+          </form>
         </section>
+      </main>
 
-        {errorMessage && (
-          <div className="error banner">
-            {errorMessage}
-            <button onClick={() => setErrorMessage("")}>×</button>
-          </div>
-        )}
-
-        <div className="columns">
-          <section className="documents">
-            <h3>
-              <FileText size={19} /> Documents
-            </h3>
-
+      {isUploadPanelOpen && (
+        <div className="upload-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !isBusy) setIsUploadPanelOpen(false); }}>
+          <section className="upload-panel" role="dialog" aria-modal="true" aria-labelledby="upload-title">
+            <div className="upload-panel-heading">
+              <div>
+                <h2 id="upload-title">Files in {selectedKnowledgeBase?.name ?? "this folder"}</h2>
+                <p>PDF, DOCX, or TXT · up to 5 GB per file</p>
+              </div>
+              <button className="icon-button" aria-label="Close uploads" onClick={() => setIsUploadPanelOpen(false)} disabled={isBusy}><X /></button>
+            </div>
             <label className={`upload ${isBusy ? "disabled" : ""}`}>
               <Upload size={21} />
-              <strong>Upload one or more files</strong>
-              <small>PDF, DOCX, or TXT · up to 5 GB per file (deployment limits may be lower)</small>
-              <input
-                type="file"
-                accept=".pdf,.docx,.txt"
-                multiple
-                onChange={handleUpload}
-                disabled={!selectedKnowledgeBaseId || isBusy}
-              />
+              <strong>{isBusy ? busyMessage : "Choose files to upload"}</strong>
+              <small>Files are added to the selected folder.</small>
+              <input type="file" accept=".pdf,.docx,.txt" multiple onChange={handleUpload} disabled={isBusy} />
             </label>
-            {!selectedKnowledgeBaseId && (
-              <p className="muted">Create a folder on the left before uploading.</p>
-            )}
-
-            <div className="filelist">
+            {errorMessage && <div className="error banner upload-error" role="alert">{errorMessage}</div>}
+            <div className="filelist upload-filelist">
               {documents.map((document) => (
                 <div className="file" key={document.id}>
                   <FileText size={20} />
                   <div>
-                    <strong>{document.original_filename}</strong>
-                    <small>
-                      {document.status} · {document.chunk_count} passages · {(document.file_size_bytes / 1024).toFixed(0)} KB · {new Date(document.created_at).toLocaleDateString()}
-                    </small>
-                    {document.processing_error && (
-                      <small className="error document-error">{document.processing_error}</small>
-                    )}
+                    <strong title={document.original_filename}>{document.original_filename}</strong>
+                    <small>{document.status} · {document.chunk_count} passages · {(document.file_size_bytes / 1024).toFixed(0)} KB</small>
+                    {document.processing_error && <small className="error document-error">{document.processing_error}</small>}
                   </div>
-                  <button
-                    onClick={() => void handleDeleteDocument(document.id)}
-                    title="Delete"
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                  <button onClick={() => void handleDeleteDocument(document.id)} title="Delete file" aria-label={`Delete ${document.original_filename}`}><Trash2 size={16} /></button>
                 </div>
               ))}
-
-              {documents.length === 0 && (
-                <p className="muted">No documents yet.</p>
-              )}
+              {documents.length === 0 && <p className="muted">No files in this folder yet.</p>}
             </div>
-          </section>
-
-          <section className="chat">
-            <h3>
-              <MessageCircle size={19} /> Ask your documents
-            </h3>
-
-            <div className="messages">
-              {messages.length === 0 && (
-                <div className="empty">
-                  <BookOpen size={36} />
-                  <h2>Ask about your files</h2>
-                  <p>Create a folder, upload a file, and ask a question.</p>
-                </div>
-              )}
-
-              {messages.map((message, index) => (
-                <div key={index} className={`bubble ${message.role}`}>
-                  <div>{message.content}</div>
-
-                  {message.sources && message.sources.length > 0 && (
-                    <div className="sources">
-                      <strong>Sources</strong>
-                      {message.sources.map((source, sourceIndex) => (
-                        <div className="source" key={`${source.document_id}-${sourceIndex}`}>
-                          <span className="source-title">
-                            {source.filename}
-                            {source.page_number != null
-                              ? ` · page ${source.page_number}`
-                              : ""}
-                          </span>
-                          <p>{source.excerpt}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              {isBusy && <div className="muted" role="status" aria-live="polite">{busyMessage}</div>}
-            </div>
-
-            <form className="composer" onSubmit={handleSendQuestion}>
-              <input
-                value={question}
-                onChange={(event) => setQuestion(event.target.value)}
-                placeholder="Ask a question about your documents..."
-                disabled={!selectedKnowledgeBaseId || isBusy}
-              />
-              <button
-                disabled={!selectedKnowledgeBaseId || isBusy || !question.trim()}
-              >
-                <Send size={19} />
-              </button>
-            </form>
           </section>
         </div>
-      </main>
+      )}
     </div>
   );
 }

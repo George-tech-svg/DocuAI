@@ -18,7 +18,7 @@ router = APIRouter(prefix='/knowledge-bases/{kb_id}/documents', tags=['Documents
 @router.post('', response_model=DocumentUploadResponse, status_code=201)
 async def upload(kb_id: UUID, file: UploadFile=File(...), user: User=Depends(current_user), db: Session=Depends(get_db)):
     owned_kb(db, user.id, kb_id)
-    max_bytes = get_settings().MAX_UPLOAD_MB * 1024 * 1024
+    max_bytes = get_settings().MAX_UPLOAD_MB * 1_000_000
     data = await file.read(max_bytes + 1)
     if len(data) > max_bytes:
         raise HTTPException(413, 'File too large')

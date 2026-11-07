@@ -52,7 +52,7 @@ Frontend: http://localhost:3000
 ## How document Q&A works
 
 1. User logs in and creates a knowledge base.
-2. User uploads a PDF, DOCX, or TXT file (5 GiB application limit by default; hosting and storage plans may impose lower limits).
+2. User uploads a PDF, DOCX, or TXT file (5 GB application limit by default; hosting and storage plans may impose lower limits).
 3. Backend extracts text and splits it into chunks.
 4. MiniLM generates 384-dimensional embeddings; PostgreSQL pgvector stores them.
 5. A question is embedded and similar chunks are retrieved.

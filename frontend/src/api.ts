@@ -3,7 +3,8 @@
  * The server URL can be configured when building the frontend.
  */
 export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
+  import.meta.env.VITE_API_BASE_URL ??
+  "https://docuai-6301.onrender.com/api/v1";
 
 /** Turn unknown JavaScript exceptions into readable messages. */
 export function getErrorMessage(error: unknown): string {
@@ -35,10 +36,31 @@ export async function request<T>(
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers,
-  });
+  const controller = new AbortController();
+  const timeoutMs = path === "/chat"
+    ? 95_000
+    : options.body instanceof FormData
+      ? 30 * 60_000
+      : 30_000;
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers,
+      signal: options.signal ?? controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("The server took too long to respond. Please try again; if this keeps happening, check the Render service logs.");
+    }
+    if (error instanceof TypeError) {
+      throw new Error("Cannot reach the DocuMind API. The Render service may be offline, still starting, or missing the production CORS configuration.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     let message = `Request failed (${response.status})`;
