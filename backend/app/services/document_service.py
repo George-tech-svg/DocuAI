@@ -39,6 +39,10 @@ def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes):
     db.add(doc)
     db.commit()
     db.refresh(doc)
+    # Uploads may fail during extraction or embedding, before Cloudinary has
+    # returned anything. Keep this initialized so the failure handler itself
+    # cannot raise UnboundLocalError and strand the document as pending.
+    stored = None
     try:
         pages = extract_pages(name, data)
         chunks = chunk_pages(pages)
