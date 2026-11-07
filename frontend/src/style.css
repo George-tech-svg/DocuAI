@@ -190,3 +190,176 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
   section { border-radius: 13px; }
   .bubble { max-width: 95%; }
 }
+
+/* Keep the mobile workspace focused on the conversation. */
+@media (max-width: 700px) {
+  .shell {
+    position: fixed;
+    inset: 0;
+    height: 100dvh;
+    min-height: 0;
+    flex-direction: column;
+  }
+
+  .shell > aside {
+    display: grid;
+    flex: 0 0 auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "brand sidebottom"
+      "newkb sidebottom"
+      "nav nav";
+    align-items: center;
+    gap: 6px 10px;
+    width: 100%;
+    max-height: none;
+    overflow: hidden;
+    padding: 8px 12px 6px;
+    border-right: 0;
+    border-bottom: 1px solid #bfd0dc;
+  }
+
+  .shell > aside .brand {
+    grid-area: brand;
+    padding: 0 2px;
+    font-size: 18px;
+  }
+
+  .shell > aside .brand svg { width: 21px; height: 21px; }
+
+  .shell > aside .smalltitle { display: none; }
+
+  .shell > aside .newkb {
+    grid-area: newkb;
+    min-width: 0;
+  }
+
+  .shell > aside .newkb input {
+    height: 38px;
+    padding: 8px 10px;
+  }
+
+  .shell > aside .newkb button {
+    display: grid;
+    width: 40px;
+    height: 38px;
+    place-items: center;
+    padding: 8px;
+  }
+
+  .shell > aside nav {
+    grid-area: nav;
+    min-width: 0;
+    max-width: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    padding-bottom: 1px;
+  }
+
+  .shell > aside nav::-webkit-scrollbar { display: none; }
+
+  .shell > aside nav button {
+    flex: 0 0 auto;
+    min-height: 36px;
+    max-width: 70vw;
+    padding: 7px 10px;
+    white-space: nowrap;
+  }
+
+  .shell > aside .sidebottom {
+    grid-area: sidebottom;
+    align-self: center;
+    margin: 0;
+    padding: 0;
+  }
+
+  .workspace-label { display: none; }
+
+  .shell > aside .sidebottom button {
+    width: auto;
+    min-height: 38px;
+    justify-content: center;
+    padding: 8px 10px;
+    white-space: nowrap;
+  }
+
+  .shell > main {
+    flex: 1 1 0;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    padding: 8px;
+  }
+
+  .shell > main > .chat {
+    min-height: 0;
+    padding: 12px;
+    border-radius: 15px;
+  }
+
+  .chat-heading {
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 10px;
+  }
+
+  .chat-heading h2 {
+    overflow: hidden;
+    max-width: 54vw;
+    font-size: 18px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .chat-heading p {
+    max-width: 52vw;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .chat-actions { flex: 0 0 auto; }
+
+  .upload-trigger {
+    min-height: 40px;
+    padding: 8px 10px;
+  }
+
+  .messages {
+    padding: 12px 2px;
+    gap: 10px;
+  }
+
+  .bubble { max-width: 92%; padding: 11px 13px; }
+
+  .composer {
+    gap: 8px;
+    padding-top: 10px;
+    padding-bottom: max(4px, env(safe-area-inset-bottom));
+  }
+
+  .composer input {
+    width: 0;
+    min-height: 46px;
+    padding: 11px 12px;
+    font-size: 14px;
+  }
+
+  .composer button {
+    display: grid;
+    flex: 0 0 46px;
+    width: 46px;
+    height: 46px;
+    place-items: center;
+    padding: 10px;
+  }
+
+  .upload-panel {
+    width: 100%;
+    height: min(88dvh, 760px);
+    max-height: 88dvh;
+    padding: 16px;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+}

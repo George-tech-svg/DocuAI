@@ -398,7 +398,7 @@ export default function App() {
         </nav>
 
         <div className="sidebottom">
-          <ShieldCheck size={16} /> Private workspace
+          <div className="workspace-label"><ShieldCheck size={16} /> Private workspace</div>
           <button onClick={handleLogout}>
             <LogOut size={17} /> Sign out
           </button>
