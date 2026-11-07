@@ -117,6 +117,19 @@ nav { display: flex; flex-direction: column; gap: 5px; }
 nav button { border: 0; background: transparent; padding: 13px; text-align: left; border-radius: 9px; display: flex; gap: 12px; align-items: center; color: #52695c; }
 nav button:hover { background: #e4ebe1; }
 nav button.selected { background: #d9e9dc; color: #176447; font-weight: 700; }
+.folder-tree { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.folder-tree-item { min-width: 0; }
+.folder-tree-row { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.folder-tree .folder-expand { flex: 0 0 30px; justify-content: center; min-height: 40px; padding: 0; color: #748896; }
+.folder-tree .folder-expand:hover { background: #dce7ec; }
+.folder-tree .folder-select { flex: 1; min-width: 0; min-height: 40px; padding: 9px 8px; gap: 8px; }
+.folder-tree .folder-select span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.folder-file-tree { margin: 2px 0 7px 15px; padding: 3px 0 3px 13px; border-left: 1px solid #bfd0d8; }
+.folder-file-row { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 7px 5px; color: #607581; font-size: 12px; }
+.folder-file-row svg { flex: 0 0 auto; color: #7793a2; }
+.folder-file-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-file-row small { flex: 0 0 auto; color: #9a6c45; font-size: 10px; }
+.folder-tree-note { display: block; padding: 6px 5px; color: #7b8b92; font-size: 11px; line-height: 1.4; }
 .sidebottom { margin-top: auto; padding-top: 14px; color: #6d8174; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 12px; }
 .sidebottom button { width: 100%; display: flex; align-items: center; gap: 8px; padding: 10px; border: 0; background: #e4ebe1; border-radius: 9px; color: #425c4c; }
 
@@ -173,6 +186,7 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
   aside { flex: 0 0 auto; width: 100%; max-height: 34dvh; padding: 12px 16px; gap: 8px; }
   aside .brand { font-size: 19px; }
   aside nav { flex-direction: row; overflow-x: auto; overflow-y: hidden; }
+  aside nav.folder-tree { flex: 1 1 auto; flex-direction: column; overflow-x: hidden; overflow-y: auto; }
   aside nav button { flex: 0 0 auto; }
   .sidebottom { margin-top: 0; padding-top: 0; }
   main { flex: 1; height: auto; padding: 16px; grid-template-rows: auto auto auto minmax(0, 1fr); }

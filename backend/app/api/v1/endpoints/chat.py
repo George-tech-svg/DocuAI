@@ -1,6 +1,8 @@
 """Chat with indexed documents and save conversation history."""
 
 import json
+import logging
+from time import perf_counter
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from starlette.concurrency import run_in_threadpool
@@ -17,6 +19,7 @@ from app.services.retrieval import retrieve
 from app.services.embeddings import embed_texts
 from app.services.llm import answer_question
 router = APIRouter(tags=['Chat'])
+logger = logging.getLogger(__name__)
 
 def _prepare_chat(user_id, data: ChatRequest, query_vector):
     """Run chat authorization and retrieval in one worker-owned DB session."""
@@ -58,15 +61,24 @@ def _save_chat(user_id, knowledge_base_id, conversation_id, question, answer, so
 
 @router.post('/chat', response_model=ChatResponse)
 async def chat(data: ChatRequest, user: User=Depends(current_user)):
+    started = perf_counter()
+    stage_started = perf_counter()
     query_vector = (await run_in_threadpool(embed_texts, [data.question]))[0]
+    logger.warning('Chat query embedding completed in %.1f seconds.', perf_counter() - stage_started)
+    stage_started = perf_counter()
     conversation_id, sources, context, has_hits = await run_in_threadpool(
         _prepare_chat, user.id, data, query_vector
     )
+    logger.warning('Chat retrieval completed in %.1f seconds (%s source(s)).', perf_counter() - stage_started, len(sources))
+    stage_started = perf_counter()
     answer = await answer_question(data.question, context) if has_hits else 'No searchable document content found in this knowledge base.'
+    logger.warning('Chat answer generation completed in %.1f seconds.', perf_counter() - stage_started)
+    stage_started = perf_counter()
     saved_conversation_id = await run_in_threadpool(
         _save_chat, user.id, data.knowledge_base_id, conversation_id,
         data.question, answer, sources,
     )
+    logger.warning('Chat persistence completed in %.1f seconds; total %.1f seconds.', perf_counter() - stage_started, perf_counter() - started)
     return ChatResponse(answer=answer, conversation_id=saved_conversation_id, sources=sources)
 
 @router.get('/conversations', response_model=list[ConversationResponse])

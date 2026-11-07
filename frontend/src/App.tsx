@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import {
   BookOpen,
+  ChevronDown,
+  ChevronRight,
   FileText,
   LogOut,
   Menu,
@@ -41,6 +43,8 @@ export default function App() {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("");
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
+  const [expandedKnowledgeBaseIds, setExpandedKnowledgeBaseIds] = useState<Set<string>>(() => new Set());
+  const [folderDocuments, setFolderDocuments] = useState<Record<string, { items: DocumentRecord[]; loading: boolean; error: string }>>({});
   const [isUploadPanelOpen, setIsUploadPanelOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [newKnowledgeBaseName, setNewKnowledgeBaseName] = useState("");
@@ -92,8 +96,49 @@ export default function App() {
         token
       );
       setDocuments(response.items);
+      setFolderDocuments((previous) => ({
+        ...previous,
+        [selectedKnowledgeBaseId]: { items: response.items, loading: false, error: "" },
+      }));
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
+    }
+  }
+
+  /** Expand a folder and load its document names for the sidebar tree. */
+  async function toggleKnowledgeBase(knowledgeBaseId: string) {
+    const isExpanded = expandedKnowledgeBaseIds.has(knowledgeBaseId);
+    setExpandedKnowledgeBaseIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(knowledgeBaseId)) next.delete(knowledgeBaseId);
+      else next.add(knowledgeBaseId);
+      return next;
+    });
+    if (isExpanded) return;
+
+    setFolderDocuments((previous) => ({
+      ...previous,
+      [knowledgeBaseId]: { items: previous[knowledgeBaseId]?.items ?? [], loading: true, error: "" },
+    }));
+    try {
+      const response = await request<DocumentListResponse>(
+        `/knowledge-bases/${knowledgeBaseId}/documents`,
+        token
+      );
+      setFolderDocuments((previous) => ({
+        ...previous,
+        [knowledgeBaseId]: { items: response.items, loading: false, error: "" },
+      }));
+      if (knowledgeBaseId === selectedKnowledgeBaseId) setDocuments(response.items);
+    } catch (error) {
+      setFolderDocuments((previous) => ({
+        ...previous,
+        [knowledgeBaseId]: {
+          items: previous[knowledgeBaseId]?.items ?? [],
+          loading: false,
+          error: getErrorMessage(error),
+        },
+      }));
     }
   }
 
@@ -156,6 +201,8 @@ export default function App() {
     setKnowledgeBases([]);
     setSelectedKnowledgeBaseId("");
     setDocuments([]);
+    setExpandedKnowledgeBaseIds(new Set());
+    setFolderDocuments({});
     setMessages([]);
     setConversationId(null);
     setIsMobileSidebarOpen(false);
@@ -179,6 +226,11 @@ export default function App() {
       setNewKnowledgeBaseName("");
       await refreshKnowledgeBases();
       setSelectedKnowledgeBaseId(created.id);
+      setExpandedKnowledgeBaseIds((previous) => new Set(previous).add(created.id));
+      setFolderDocuments((previous) => ({
+        ...previous,
+        [created.id]: { items: [], loading: false, error: "" },
+      }));
       setIsMobileSidebarOpen(false);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
@@ -426,22 +478,53 @@ export default function App() {
           </button>
         </form>
 
-        <nav>
-          {knowledgeBases.map((knowledgeBase) => (
-            <button
-              key={knowledgeBase.id}
-              className={
-                selectedKnowledgeBaseId === knowledgeBase.id ? "selected" : ""
-              }
-              onClick={() => {
-                setSelectedKnowledgeBaseId(knowledgeBase.id);
-                setIsMobileSidebarOpen(false);
-              }}
-            >
-              <BookOpen size={16} />
-              {knowledgeBase.name}
-            </button>
-          ))}
+        <nav className="folder-tree" aria-label="Folders and files">
+          {knowledgeBases.map((knowledgeBase) => {
+            const isExpanded = expandedKnowledgeBaseIds.has(knowledgeBase.id);
+            const folder = folderDocuments[knowledgeBase.id];
+            return (
+              <div className="folder-tree-item" key={knowledgeBase.id}>
+                <div className="folder-tree-row">
+                  <button
+                    className="folder-expand"
+                    type="button"
+                    aria-label={`${isExpanded ? "Collapse" : "Expand"} ${knowledgeBase.name}`}
+                    aria-expanded={isExpanded}
+                    onClick={() => void toggleKnowledgeBase(knowledgeBase.id)}
+                  >
+                    {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                  </button>
+                  <button
+                    type="button"
+                    className={`folder-select ${selectedKnowledgeBaseId === knowledgeBase.id ? "selected" : ""}`}
+                    onClick={() => {
+                      setSelectedKnowledgeBaseId(knowledgeBase.id);
+                      setIsMobileSidebarOpen(false);
+                    }}
+                  >
+                    <BookOpen size={16} />
+                    <span>{knowledgeBase.name}</span>
+                  </button>
+                </div>
+                {isExpanded && (
+                  <div className="folder-file-tree" aria-label={`Files in ${knowledgeBase.name}`}>
+                    {folder?.loading && <small className="folder-tree-note">Loading files…</small>}
+                    {folder?.error && <small className="folder-tree-note error">{folder.error}</small>}
+                    {!folder?.loading && !folder?.error && folder?.items.map((document) => (
+                      <div className="folder-file-row" key={document.id} title={document.original_filename}>
+                        <FileText size={14} />
+                        <span>{document.original_filename}</span>
+                        {document.status !== "ready" && <small>{document.status}</small>}
+                      </div>
+                    ))}
+                    {!folder?.loading && !folder?.error && folder?.items.length === 0 && (
+                      <small className="folder-tree-note">No files yet</small>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
         <div className="sidebottom">
