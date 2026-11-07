@@ -1,8 +1,13 @@
 """Download the embedding model during the Render build, not a user request."""
 
 from pathlib import Path
+import sys
 
 from huggingface_hub import snapshot_download
+
+# Support both Render layouts: repository root and `backend` as root directory.
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(BACKEND_DIR))
 
 from app.services.embeddings import MODEL_CACHE_DIR, MODEL_ID
 

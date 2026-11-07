@@ -22,10 +22,15 @@ The Vite frontend reads `VITE_API_BASE_URL` at build time. Set it in the Vercel 
 
 Set all service variables in the backend hosting provider as well as the appropriate Vercel variables. Local `.env` files do not configure deployed services.
 
-For Render, keep the service root directory set to `backend` and append
-`&& python scripts/preload_embedding_model.py` to its existing build command
-after dependency installation. For example, use
-`pip install -r requirements.txt && python scripts/preload_embedding_model.py`.
+For Render, append the model preload script to the existing build command
+after dependency installation. Use the command matching the service's root
+directory:
+
+- Root Directory `backend`:
+  `pip install -r requirements.txt && python scripts/preload_embedding_model.py`
+- Root Directory at the repository root:
+  `pip install -r backend/requirements.txt && python backend/scripts/preload_embedding_model.py`
+
 This downloads the MiniLM embedding model while building the release, so a
 user's first upload or chat request does not need to fetch model files from
 Hugging Face. The cache is kept in the build artifact and is excluded from Git.
