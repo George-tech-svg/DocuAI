@@ -44,10 +44,22 @@ export async function request<T>(
     let message = `Request failed (${response.status})`;
 
     try {
-      const data: { detail?: string } = await response.json();
+      const data: { detail?: string | Array<{ loc?: Array<string | number>; msg?: string }> } =
+        await response.json();
 
       if (typeof data.detail === "string") {
         message = data.detail;
+      } else if (Array.isArray(data.detail) && data.detail.length > 0) {
+        message = data.detail
+          .map((issue) => {
+            const field = issue.loc?.[issue.loc.length - 1];
+            const label =
+              typeof field === "string"
+                ? field.replace(/_/g, " ").replace(/\b\w/g, (letter: string) => letter.toUpperCase())
+                : "Request";
+            return `${label}: ${issue.msg ?? "Invalid value"}`;
+          })
+          .join(". ");
       }
     } catch {
       // Keep the HTTP status message if the server did not return JSON.

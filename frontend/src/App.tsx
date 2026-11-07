@@ -268,6 +268,8 @@ export default function App() {
           {isRegistering && (
             <input
               required
+              minLength={2}
+              maxLength={150}
               placeholder="Full name"
               value={fullName}
               onChange={(event) => setFullName(event.target.value)}
@@ -285,10 +287,24 @@ export default function App() {
           <input
             type="password"
             required
+            minLength={isRegistering ? 12 : undefined}
+            maxLength={isRegistering ? 128 : undefined}
+            autoComplete={isRegistering ? "new-password" : "current-password"}
+            title={
+              isRegistering
+                ? "Use 12–128 characters, including uppercase and lowercase letters, a number, and a special character."
+                : undefined
+            }
             placeholder="Password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
           />
+
+          {isRegistering && (
+            <p className="muted">
+              Password must be 12–128 characters and include uppercase and lowercase letters, a number, and a special character.
+            </p>
+          )}
 
           {errorMessage && <p className="error">{errorMessage}</p>}
 
