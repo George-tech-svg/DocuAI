@@ -30,8 +30,8 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .auth-toggle { background: none; border: 0; color: inherit; cursor: pointer; text-decoration: underline; padding: 0; }
 
 /* The requested blue workspace and the two-panel chat layout. */
-:root { color: #24394b; background: #4a90e2; }
-body, .shell { background: #4a90e2; }
+:root { color: #24394b; background: #007bff; }
+html, body, #root, .shell, main { background: #007bff; }
 .brand { color: #24465f; }
 .brand span { color: #2876b8; }
 .auth-wrap { background: #4a90e2; }
@@ -45,8 +45,8 @@ nav button { color: #526a7a; }
 nav button:hover { background: #d6e4ec; }
 nav button.selected { background: #cce0ec; color: #235f88; }
 .sidebottom button { background: #d8e5ec; color: #425f73; }
-main { display: flex; padding: 22px; }
-.chat { flex: 1; min-height: 0; padding: 20px 24px; background: #f1f4f1; border-color: #c8d6df; }
+main { display: grid; grid-template-rows: minmax(0, 1fr); flex: 1 1 0; width: 0; height: 100%; min-height: 0; overflow: hidden; padding: 18px; }
+.chat { display: flex; flex: 1 1 auto; flex-direction: column; width: 100%; height: 100%; min-height: 0; overflow: hidden; padding: 20px 24px; background: #f1f4f1; border-color: #c8d6df; }
 .chat-heading, .upload-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .chat-heading { flex: 0 0 auto; padding-bottom: 15px; border-bottom: 1px solid #d7e0e2; }
 .chat-heading h2 { margin: 0 0 4px; font-size: 23px; }
@@ -56,11 +56,11 @@ main { display: flex; padding: 22px; }
 .upload-trigger { display: inline-flex; align-items: center; gap: 8px; border: 0; border-radius: 9px; padding: 10px 14px; background: #327fc1; color: #fff; font-weight: 650; }
 .upload-trigger:hover { background: #2569a7; }
 .upload-trigger:disabled { opacity: .5; cursor: not-allowed; }
-.messages { padding: 18px 10px; }
+.messages { flex: 1 1 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; padding: 18px 10px; }
 .bubble.user { background: #327fc1; color: #fff; }
 .bubble.assistant { background: #e1e9e9; color: #293f4d; }
 .empty, .empty h2 { color: #506a7a; }
-.composer { border-top-color: #d7e0e2; }
+.composer { position: sticky; bottom: 0; z-index: 1; flex: 0 0 auto; border-top-color: #d7e0e2; background: #f1f4f1; padding-bottom: max(2px, env(safe-area-inset-bottom)); }
 .upload { color: #286fa9; border-color: #9bbbd0; background: #e8f0f1; }
 .upload:hover { border-color: #5d9bc5; background: #deeaee; }
 .upload-backdrop { position: fixed; inset: 0; z-index: 20; display: flex; justify-content: flex-end; background: #172b3b66; }
@@ -79,7 +79,7 @@ main { display: flex; padding: 22px; }
 .banner { background: #f3e8e5; border-color: #e6d2cd; }
 
 @media (max-width: 900px) {
-  main { min-height: 0; padding: 12px; }
+  main { width: 100%; height: 0; min-height: 0; flex: 1 1 0; grid-template-rows: minmax(0, 1fr); padding: 12px; }
   .chat { padding: 14px; }
   .chat-heading h2 { font-size: 19px; }
   .upload-panel { height: min(90dvh, 760px); align-self: flex-end; border-radius: 18px 18px 0 0; border: 1px solid #c8d6df; }
