@@ -352,11 +352,11 @@ export default function App() {
           <BookOpen /> DocuMind <span>AI</span>
         </div>
 
-        <div className="smalltitle">KNOWLEDGE BASES</div>
+        <div className="smalltitle">FOLDERS</div>
 
         <form className="newkb" onSubmit={handleCreateKnowledgeBase}>
           <input
-            placeholder="New knowledge base"
+            placeholder="New folder name"
             value={newKnowledgeBaseName}
             onChange={(event) => setNewKnowledgeBaseName(event.target.value)}
           />
@@ -392,10 +392,26 @@ export default function App() {
         <header>
           <div>
             <h2>{selectedKnowledgeBase?.name ?? "Your workspace"}</h2>
-            <p>Upload documents, then ask questions grounded in their contents.</p>
+            <p>Add files, then ask questions about them.</p>
           </div>
-          <div className="pill">RAG workspace</div>
+          <div className="pill">Your files</div>
         </header>
+
+        <section className="quick-guide" aria-labelledby="guide-title">
+          <h3 id="guide-title">How to use DocuMind</h3>
+          <ol>
+            <li>
+              <strong>Make a folder.</strong> Enter a name on the left and press <strong>+</strong>.
+            </li>
+            <li>
+              <strong>Add a file.</strong> Choose a PDF, Word file (DOCX), or text file. Wait until its status says <strong>ready</strong>.
+            </li>
+            <li>
+              <strong>Ask a question.</strong> Type in the box on the right and press the arrow. DocuMind answers using files in the selected folder.
+            </li>
+          </ol>
+          <p>To use a different folder, select it from the list on the left.</p>
+        </section>
 
         {errorMessage && (
           <div className="error banner">
@@ -422,7 +438,7 @@ export default function App() {
               />
             </label>
             {!selectedKnowledgeBaseId && (
-              <p className="muted">Create a knowledge base from the left panel before uploading.</p>
+              <p className="muted">Create a folder on the left before uploading.</p>
             )}
 
             <div className="filelist">
@@ -462,8 +478,8 @@ export default function App() {
               {messages.length === 0 && (
                 <div className="empty">
                   <BookOpen size={36} />
-                  <h2>Answers from your knowledge</h2>
-                  <p>Choose a knowledge base, upload a document, and ask a question.</p>
+                  <h2>Ask about your files</h2>
+                  <p>Create a folder, upload a file, and ask a question.</p>
                 </div>
               )}
 

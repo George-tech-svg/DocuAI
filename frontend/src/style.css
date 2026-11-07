@@ -4,5 +4,13 @@
 .sources strong{display:block;margin-bottom:7px}.source{border-left:2px solid #9bcfc3;padding:4px 0 4px 9px;margin:7px 0}.source-title{font-weight:700;color:#315c5a}.source p{margin:4px 0 0;color:#52676b;line-height:1.45}
 .document-error{display:block;margin-top:4px;white-space:normal}
 
+/* A short, visible first-use guide keeps the main upload and chat steps clear. */
+.quick-guide{padding:16px 20px;margin:0 0 18px;background:#eaf7f2;border:1px solid #d5ece4;border-radius:13px;color:#365b59}
+.quick-guide h3{margin:0 0 9px;color:#176b5f}
+.quick-guide ol{margin:0;padding-left:22px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.quick-guide li{padding-left:2px;font-size:13px;line-height:1.5}
+.quick-guide p{margin:8px 0 0;color:#6a8382;font-size:12px}
+@media(max-width:900px){.quick-guide ol{grid-template-columns:1fr;gap:5px}}
+
 /* The authentication switch is a text-like button, not a form submit. */
 .auth-toggle { background: none; border: 0; color: inherit; cursor: pointer; text-decoration: underline; padding: 0; }
