@@ -11,6 +11,9 @@ allowed_origins = {
     for origin in (settings.FRONTEND_ORIGIN, *settings.FRONTEND_ORIGINS.split(','))
     if origin.strip()
 }
+# Keep the production Vercel origin available even when Render's environment
+# variable is missing or stale. Additional preview origins remain configurable.
+allowed_origins.add('https://docu-ai-sage.vercel.app')
 app.add_middleware(CORSMiddleware, allow_origins=sorted(allowed_origins), allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
 app.include_router(api_router, prefix=get_settings().API_V1_PREFIX)
 

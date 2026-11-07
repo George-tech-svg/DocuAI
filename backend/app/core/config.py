@@ -21,7 +21,8 @@ class Settings(BaseSettings):
     )
     FRONTEND_ORIGINS: str = ''
     MAX_UPLOAD_MB: int = Field(
-        default=10,
+        # 5 GiB ceiling. Hosting and storage providers may enforce lower limits.
+        default=5120,
         validation_alias=AliasChoices('MAX_UPLOAD_MB', 'MAX_UPLOAD_SIZE_MB'),
     )
     CLOUDINARY_CLOUD_NAME: str = ''

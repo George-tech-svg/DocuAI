@@ -439,7 +439,7 @@ export default function App() {
             <label className={`upload ${isBusy ? "disabled" : ""}`}>
               <Upload size={21} />
               <strong>Upload one or more files</strong>
-              <small>PDF, DOCX, or TXT · server size limit applies to each file</small>
+              <small>PDF, DOCX, or TXT · up to 5 GB per file (deployment limits may be lower)</small>
               <input
                 type="file"
                 accept=".pdf,.docx,.txt"
