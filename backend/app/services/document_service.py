@@ -1,6 +1,7 @@
 """Validate, extract, index, and manage uploaded documents."""
 
 from datetime import datetime, timezone
+import logging
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
@@ -14,6 +15,8 @@ from app.services.chunking import chunk_pages
 from app.services.embeddings import embed_texts
 from app.services.storage import store_file, delete_file
 from app.core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 def owned_kb(db, user_id, kb_id):
     """Ensure the requested knowledge base belongs to the current user."""
@@ -62,6 +65,7 @@ def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes):
         db.commit()
         db.refresh(doc)
     except Exception as exc:
+        logger.exception('Document processing failed for document %s', doc.id)
         db.rollback()
         if stored:
             try:

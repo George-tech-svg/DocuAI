@@ -38,21 +38,76 @@ export async function request<T>(
 
   const controller = new AbortController();
   const timeoutMs = path === "/chat"
-    ? 95_000
+    // The backend can make three AI-provider attempts, each with a 90s read
+    // timeout. Leave room for retries and model/database work before failing.
+    ? 5 * 60_000
     : options.body instanceof FormData
       ? 30 * 60_000
       : 30_000;
-  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
-  let response: Response;
+  let timedOut = false;
+  const timeoutId = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  const callerSignal = options.signal;
+  const abortFromCaller = () => controller.abort(callerSignal?.reason);
+  if (callerSignal?.aborted) {
+    abortFromCaller();
+  } else {
+    callerSignal?.addEventListener("abort", abortFromCaller, { once: true });
+  }
+
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
       headers,
-      signal: options.signal ?? controller.signal,
+      signal: controller.signal,
     });
+
+    if (!response.ok) {
+      let message = `Request failed (${response.status})`;
+
+      try {
+        const data: { detail?: string | Array<{ loc?: Array<string | number>; msg?: string }> } =
+          await response.json();
+
+        if (typeof data.detail === "string") {
+          message = data.detail;
+        } else if (Array.isArray(data.detail) && data.detail.length > 0) {
+          message = data.detail
+            .map((issue) => {
+              const field = issue.loc?.[issue.loc.length - 1];
+              const label =
+                typeof field === "string"
+                  ? field.replace(/_/g, " ").replace(/\b\w/g, (letter: string) => letter.toUpperCase())
+                  : "Request";
+              return `${label}: ${issue.msg ?? "Invalid value"}`;
+            })
+            .join(". ");
+        }
+      } catch {
+        // Keep the HTTP status message if the server did not return JSON.
+      }
+
+      throw new Error(message);
+    }
+
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
+    // Keep the request deadline active while consuming the body as well as
+    // while waiting for response headers, so a stalled body cannot leave the
+    // UI's busy state active forever.
+    return await response.json() as T;
   } catch (error) {
+    if (timedOut) {
+      throw new Error(path === "/chat"
+        ? "The answer is taking longer than expected. Please try again; if this keeps happening, check the Render service logs."
+        : "The server took too long to respond. Please try again; if this keeps happening, check the Render service logs.");
+    }
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error("The server took too long to respond. Please try again; if this keeps happening, check the Render service logs.");
+      throw new Error("Request was cancelled.");
     }
     if (error instanceof TypeError) {
       throw new Error("Cannot reach the DocuMind API. The Render service may be offline, still starting, or missing the production CORS configuration.");
@@ -60,39 +115,6 @@ export async function request<T>(
     throw error;
   } finally {
     window.clearTimeout(timeoutId);
+    callerSignal?.removeEventListener("abort", abortFromCaller);
   }
-
-  if (!response.ok) {
-    let message = `Request failed (${response.status})`;
-
-    try {
-      const data: { detail?: string | Array<{ loc?: Array<string | number>; msg?: string }> } =
-        await response.json();
-
-      if (typeof data.detail === "string") {
-        message = data.detail;
-      } else if (Array.isArray(data.detail) && data.detail.length > 0) {
-        message = data.detail
-          .map((issue) => {
-            const field = issue.loc?.[issue.loc.length - 1];
-            const label =
-              typeof field === "string"
-                ? field.replace(/_/g, " ").replace(/\b\w/g, (letter: string) => letter.toUpperCase())
-                : "Request";
-            return `${label}: ${issue.msg ?? "Invalid value"}`;
-          })
-          .join(". ");
-      }
-    } catch {
-      // Keep the HTTP status message if the server did not return JSON.
-    }
-
-    throw new Error(message);
-  }
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  return response.json() as Promise<T>;
 }

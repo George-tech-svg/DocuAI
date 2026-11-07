@@ -11,7 +11,7 @@ from app.api.dependencies import current_user
 from app.models.user import User
 from app.models.document import Document
 from app.schemas.document import DocumentResponse, DocumentListResponse, DocumentUploadResponse, DocumentStatusResponse
-from app.services.document_service import owned_document, process_upload
+from app.services.document_service import owned_kb, owned_document, process_upload
 from app.services.storage import delete_file
 from app.core.config import get_settings
 router = APIRouter(prefix='/knowledge-bases/{kb_id}/documents', tags=['Documents'])
