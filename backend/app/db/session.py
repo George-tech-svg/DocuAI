@@ -3,12 +3,12 @@
 from functools import lru_cache
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from app.core.config import get_settings
+from app.core.config import get_settings, psycopg_database_url
 
 @lru_cache
 def get_engine():
     return create_engine(
-        get_settings().DATABASE_URL,
+        psycopg_database_url(get_settings().DATABASE_URL),
         pool_pre_ping=True,
         # Avoid letting a sleeping or unreachable hosted database hold an API
         # request indefinitely. psycopg uses seconds for this setting.

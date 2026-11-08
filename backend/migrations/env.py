@@ -1,7 +1,7 @@
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from app.core.config import get_settings
+from app.core.config import get_settings, psycopg_database_url
 from app.db.base import Base
 from app import models  # noqa: F401 - register all model metadata
 
@@ -12,7 +12,7 @@ target_metadata = Base.metadata
 def run_migrations_offline():
     settings = get_settings()
     context.configure(
-        url=settings.DATABASE_URL,
+        url=psycopg_database_url(settings.DATABASE_URL),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -25,7 +25,7 @@ def run_migrations_offline():
 def run_migrations_online():
     settings = get_settings()
     section = config.get_section(config.config_ini_section) or {}
-    section["sqlalchemy.url"] = settings.DATABASE_URL
+    section["sqlalchemy.url"] = psycopg_database_url(settings.DATABASE_URL)
     connectable = engine_from_config(
         section,
         prefix="sqlalchemy.",

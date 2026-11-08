@@ -4,6 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 # The credentials currently live in the project-level frontend/.env file.
 # Resolve it from this module so the backend can be started from either the
@@ -40,3 +41,11 @@ class Settings(BaseSettings):
 def get_settings():
     """Return cached application settings loaded from the environment."""
     return Settings()
+
+
+def psycopg_database_url(database_url: str) -> str:
+    """Select the installed Psycopg 3 driver regardless of SQLAlchemy version."""
+    url = make_url(database_url)
+    if url.drivername in {'postgres', 'postgresql'}:
+        url = url.set(drivername='postgresql+psycopg')
+    return url.render_as_string(hide_password=False)

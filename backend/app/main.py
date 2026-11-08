@@ -26,6 +26,10 @@ def home():
 app = CORSMiddleware(
     app=api,
     allow_origins=sorted(allowed_origins),
+    # Vercel assigns both stable and deployment-specific hostnames. Keep the
+    # exact configured origins above and allow HTTPS Vercel aliases as well,
+    # so preview/prod host changes do not silently block browser API calls.
+    allow_origin_regex=r'^https://[a-z0-9-]+\.vercel\.app$',
     allow_credentials=True,
     allow_methods=['*'],
     allow_headers=['*'],

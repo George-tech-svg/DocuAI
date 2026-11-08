@@ -43,7 +43,7 @@ only in Render's environment settings; never put it in frontend variables or
 source control. The chat endpoint uses the OpenAI-compatible
 `https://api.deepseek.com/chat/completions` endpoint with bearer authentication.
 
-For the current production frontend, set Render's `FRONTEND_URL` to `https://docu-ai-sage.vercel.app` (no trailing slash). That production origin is also included as a code fallback. Add extra preview origins to `FRONTEND_ORIGINS` as a comma-separated list if needed, then redeploy the Render service.
+Set Render's `FRONTEND_URL` to the production Vercel domain shown under **Project Settings → Domains** (no trailing slash). The backend also accepts HTTPS `*.vercel.app` domains so Vercel's deployment-specific preview hostnames do not block API requests. Add any custom non-Vercel domains to `FRONTEND_ORIGINS` as a comma-separated list, then redeploy the Render service.
 
 Ready-to-import production settings are in `backend/.env.render`; in Render, open the service's **Environment** page and choose **Add from .env**, select that file, then save and deploy. The file is gitignored because it contains credentials copied from the existing local environment. `frontend/.env.vercel` contains only the public API base URL. Vercel's dashboard does not import a `.env` file; add that single `VITE_API_BASE_URL` value under **Project Settings → Environment Variables** for Production (and Preview if needed), then redeploy.
 
