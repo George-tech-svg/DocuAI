@@ -532,7 +532,9 @@ export default function App() {
                       >
                         <FileText size={14} />
                         <span>{document.original_filename}</span>
-                        {document.status !== "ready" && <small>{document.status}</small>}
+                        {document.status !== "ready" && (
+                          <small>{document.status === "pending" ? "waiting" : document.status}</small>
+                        )}
                       </button>
                     ))}
                     {!folder?.loading && !folder?.error && folder?.items.length === 0 && (

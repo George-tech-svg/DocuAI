@@ -38,9 +38,9 @@ export async function request<T>(
 
   const controller = new AbortController();
   const timeoutMs = path === "/chat"
-    // The backend can make three AI-provider attempts, each with a 90s read
-    // timeout. Leave room for retries and model/database work before failing.
-    ? 5 * 60_000
+    // The backend makes at most two provider attempts with a 60s read timeout.
+    // Leave room for embedding, retrieval, and persistence before failing.
+    ? 3 * 60_000
     : options.body instanceof FormData
       ? 30 * 60_000
       // Render may need around 40 seconds to cold start this service after it

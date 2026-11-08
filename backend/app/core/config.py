@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     JWT_SECRET_KEY: str
     DEEPSEEK_API_KEY: str = ''
-    DEEPSEEK_MODEL: str = 'deepseek-chat'
+    DEEPSEEK_MODEL: str = 'deepseek-flash'
     FRONTEND_ORIGIN: str = Field(
         default='https://docu-ai-sage.vercel.app',
         validation_alias=AliasChoices('FRONTEND_ORIGIN', 'FRONTEND_URL'),

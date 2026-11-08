@@ -12,7 +12,7 @@ Required keys:
 
 Additional service configuration:
 
-- `DEEPSEEK_MODEL`: Optional; defaults to `deepseek-chat`.
+- `DEEPSEEK_MODEL`: Optional; defaults to `deepseek-flash`. The current DeepSeek API model names are `deepseek-flash` and `deepseek-v4-pro`; the legacy `deepseek-chat` name was discontinued.
 - `FRONTEND_URL` or `FRONTEND_ORIGIN`: The exact deployed frontend origin, used by backend CORS.
 - `FRONTEND_ORIGINS`: Optional comma-separated list of additional exact frontend origins, such as Vercel preview domains.
 - `MAX_UPLOAD_SIZE_MB` or `MAX_UPLOAD_MB`: Defaults to `5000` MB (5 GB decimal, or 5,000,000,000 bytes per file). The hosting provider, Cloudinary account plan, available memory, and document-processing workload can impose lower practical limits; see the deployment note below.
@@ -36,6 +36,12 @@ user's first upload or chat request does not need to fetch model files from
 Hugging Face. The cache is kept in the build artifact and is excluded from Git.
 If model preloading fails during the build, inspect that build error; the live
 service would otherwise try the same download during a request.
+
+In Render's Environment page, set `DEEPSEEK_API_KEY` to a valid key from the
+DeepSeek Platform and set `DEEPSEEK_MODEL` to `deepseek-flash`. Keep the key
+only in Render's environment settings; never put it in frontend variables or
+source control. The chat endpoint uses the OpenAI-compatible
+`https://api.deepseek.com/chat/completions` endpoint with bearer authentication.
 
 For the current production frontend, set Render's `FRONTEND_URL` to `https://docu-ai-sage.vercel.app` (no trailing slash). That production origin is also included as a code fallback. Add extra preview origins to `FRONTEND_ORIGINS` as a comma-separated list if needed, then redeploy the Render service.
 

@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 import logging
+from time import perf_counter
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
@@ -42,19 +43,34 @@ def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes):
     db.add(doc)
     db.commit()
     db.refresh(doc)
+    overall_started = perf_counter()
+    doc.status = 'processing'
+    db.commit()
+    logger.info('Document %s processing started (%s bytes).', doc.id, len(data))
     # Uploads may fail during extraction or embedding, before Cloudinary has
     # returned anything. Keep this initialized so the failure handler itself
     # cannot raise UnboundLocalError and strand the document as pending.
     stored = None
     try:
+        stage_started = perf_counter()
+        logger.info('Document %s: extracting text.', doc.id)
         pages = extract_pages(name, data)
+        logger.info('Document %s: extracted %s page(s) in %.1f seconds.', doc.id, len(pages), perf_counter() - stage_started)
+        stage_started = perf_counter()
         chunks = chunk_pages(pages)
         if not chunks:
             raise ValueError('No extractable text found. Scanned PDFs require OCR.')
+        logger.info('Document %s: created %s text chunk(s).', doc.id, len(chunks))
+        stage_started = perf_counter()
+        logger.info('Document %s: generating embeddings.', doc.id)
         vectors = embed_texts([content for _, content in chunks])
+        logger.info('Document %s: generated embeddings in %.1f seconds.', doc.id, perf_counter() - stage_started)
         for i, ((page, content), embedding) in enumerate(zip(chunks, vectors)):
             db.add(DocumentChunk(document_id=doc.id, chunk_index=i, page_number=page, content=content, embedding=embedding))
+        stage_started = perf_counter()
+        logger.info('Document %s: saving original file to Cloudinary.', doc.id)
         stored = store_file(name, data)
+        logger.info('Document %s: Cloudinary save finished in %.1f seconds.', doc.id, perf_counter() - stage_started)
         doc.cloudinary_public_id = stored['public_id']
         doc.cloudinary_resource_type = stored['resource_type']
         doc.storage_url = stored['url']
@@ -64,6 +80,7 @@ def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes):
         doc.processed_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(doc)
+        logger.info('Document %s ready after %.1f seconds.', doc.id, perf_counter() - overall_started)
     except Exception as exc:
         logger.exception('Document processing failed for document %s', doc.id)
         db.rollback()
