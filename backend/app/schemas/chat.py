@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class ChatRequest(BaseModel):
     knowledge_base_id: UUID
+    document_id: UUID | None = None
     question: str = Field(min_length=2, max_length=3000)
     conversation_id: UUID | None = None
 

@@ -42,6 +42,7 @@ export default function App() {
   // Knowledge bases and documents in the selected workspace.
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("");
+  const [selectedDocumentId, setSelectedDocumentId] = useState("");
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [expandedKnowledgeBaseIds, setExpandedKnowledgeBaseIds] = useState<Set<string>>(() => new Set());
   const [folderDocuments, setFolderDocuments] = useState<Record<string, { items: DocumentRecord[]; loading: boolean; error: string }>>({});
@@ -200,6 +201,7 @@ export default function App() {
     setToken("");
     setKnowledgeBases([]);
     setSelectedKnowledgeBaseId("");
+    setSelectedDocumentId("");
     setDocuments([]);
     setExpandedKnowledgeBaseIds(new Set());
     setFolderDocuments({});
@@ -226,6 +228,7 @@ export default function App() {
       setNewKnowledgeBaseName("");
       await refreshKnowledgeBases();
       setSelectedKnowledgeBaseId(created.id);
+      setSelectedDocumentId("");
       setExpandedKnowledgeBaseIds((previous) => new Set(previous).add(created.id));
       setFolderDocuments((previous) => ({
         ...previous,
@@ -293,6 +296,7 @@ export default function App() {
         token,
         { method: "DELETE" }
       );
+      if (selectedDocumentId === documentId) setSelectedDocumentId("");
       await refreshDocuments();
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
@@ -319,6 +323,7 @@ export default function App() {
         method: "POST",
         body: JSON.stringify({
           knowledge_base_id: selectedKnowledgeBaseId,
+          document_id: selectedDocumentId || null,
           question: submittedQuestion,
           conversation_id: conversationId,
         }),
@@ -499,6 +504,7 @@ export default function App() {
                     className={`folder-select ${selectedKnowledgeBaseId === knowledgeBase.id ? "selected" : ""}`}
                     onClick={() => {
                       setSelectedKnowledgeBaseId(knowledgeBase.id);
+                      setSelectedDocumentId("");
                       setIsMobileSidebarOpen(false);
                     }}
                   >
@@ -511,11 +517,23 @@ export default function App() {
                     {folder?.loading && <small className="folder-tree-note">Loading files…</small>}
                     {folder?.error && <small className="folder-tree-note error">{folder.error}</small>}
                     {!folder?.loading && !folder?.error && folder?.items.map((document) => (
-                      <div className="folder-file-row" key={document.id} title={document.original_filename}>
+                      <button
+                        className={`folder-file-row ${selectedDocumentId === document.id ? "selected" : ""}`}
+                        key={document.id}
+                        title={document.original_filename}
+                        type="button"
+                        disabled={document.status !== "ready"}
+                        aria-pressed={selectedDocumentId === document.id}
+                        onClick={() => {
+                          setSelectedKnowledgeBaseId(knowledgeBase.id);
+                          setSelectedDocumentId((current) => current === document.id ? "" : document.id);
+                          setIsMobileSidebarOpen(false);
+                        }}
+                      >
                         <FileText size={14} />
                         <span>{document.original_filename}</span>
                         {document.status !== "ready" && <small>{document.status}</small>}
-                      </div>
+                      </button>
                     ))}
                     {!folder?.loading && !folder?.error && folder?.items.length === 0 && (
                       <small className="folder-tree-note">No files yet</small>
@@ -540,7 +558,9 @@ export default function App() {
           <div className="chat-heading">
             <div>
               <h2>{selectedKnowledgeBase?.name ?? "Your workspace"}</h2>
-              <p>Ask questions about files in this folder.</p>
+              <p>{selectedDocumentId
+                ? `Questions will use ${documents.find((document) => document.id === selectedDocumentId)?.original_filename ?? "the selected file"}. Click it again to search the whole folder.`
+                : "Ask questions about files in this folder."}</p>
             </div>
             <div className="chat-actions">
               <span className="pill">{documents.length} file{documents.length === 1 ? "" : "s"}</span>

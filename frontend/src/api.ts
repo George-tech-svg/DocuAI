@@ -43,7 +43,10 @@ export async function request<T>(
     ? 5 * 60_000
     : options.body instanceof FormData
       ? 30 * 60_000
-      : 30_000;
+      // Render may need around 40 seconds to cold start this service after it
+      // has been idle. Keep ordinary API requests alive long enough for that
+      // startup to finish and for the first database connection to complete.
+      : 90_000;
   let timedOut = false;
   const timeoutId = window.setTimeout(() => {
     timedOut = true;

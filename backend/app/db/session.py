@@ -7,7 +7,13 @@ from app.core.config import get_settings
 
 @lru_cache
 def get_engine():
-    return create_engine(get_settings().DATABASE_URL, pool_pre_ping=True)
+    return create_engine(
+        get_settings().DATABASE_URL,
+        pool_pre_ping=True,
+        # Avoid letting a sleeping or unreachable hosted database hold an API
+        # request indefinitely. psycopg uses seconds for this setting.
+        connect_args={"connect_timeout": 10},
+    )
 
 def get_db():
     """Open a database session for one API request and close it afterward."""

@@ -14,7 +14,7 @@ from app.models.user import User
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.schemas.chat import ChatRequest, ChatResponse, Source, ConversationResponse, MessageResponse
-from app.services.document_service import owned_kb
+from app.services.document_service import owned_kb, owned_document
 from app.services.retrieval import retrieve
 from app.services.embeddings import embed_texts
 from app.services.llm import answer_question
@@ -25,6 +25,8 @@ def _prepare_chat(user_id, data: ChatRequest, query_vector):
     """Run chat authorization and retrieval in one worker-owned DB session."""
     with sessionmaker(bind=get_engine())() as db:
         owned_kb(db, user_id, data.knowledge_base_id)
+        if data.document_id:
+            owned_document(db, user_id, data.knowledge_base_id, data.document_id)
         conversation = None
         if data.conversation_id:
             conversation = db.scalar(select(Conversation).where(
@@ -34,7 +36,7 @@ def _prepare_chat(user_id, data: ChatRequest, query_vector):
             ))
             if conversation is None:
                 raise HTTPException(404, 'Conversation not found')
-        hits = retrieve(db, data.knowledge_base_id, data.question, query_vector=query_vector)
+        hits = retrieve(db, data.knowledge_base_id, data.question, query_vector=query_vector, document_id=data.document_id)
         sources = [Source(document_id=doc_id, filename=name, page_number=chunk.page_number, excerpt=chunk.content[:300]) for chunk, name, doc_id in hits]
         context = '\n\n'.join((f'[{i}] {name}, page {chunk.page_number}: {chunk.content}' for i, (chunk, name, _) in enumerate(hits, 1)))
         return conversation.id if conversation else None, sources, context, bool(hits)
