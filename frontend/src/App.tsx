@@ -154,6 +154,31 @@ export default function App() {
     setConversationId(null);
   }, [token, selectedKnowledgeBaseId]);
 
+  // Uploads are processed synchronously by the API, so poll the document list
+  // after an upload response or a page reload until the saved status changes.
+  const hasProcessingDocuments = documents.some(
+    (document) => document.status === "pending" || document.status === "processing"
+  );
+  useEffect(() => {
+    if (!token || !selectedKnowledgeBaseId || !hasProcessingDocuments) return;
+    const timer = window.setInterval(async () => {
+      try {
+        const response = await request<DocumentListResponse>(
+          `/knowledge-bases/${selectedKnowledgeBaseId}/documents`,
+          token
+        );
+        setDocuments(response.items);
+        setFolderDocuments((previous) => ({
+          ...previous,
+          [selectedKnowledgeBaseId]: { items: response.items, loading: false, error: "" },
+        }));
+      } catch {
+        // Keep the last known document statuses; the next poll can recover.
+      }
+    }, 15_000);
+    return () => window.clearInterval(timer);
+  }, [token, selectedKnowledgeBaseId, hasProcessingDocuments]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, isBusy]);
