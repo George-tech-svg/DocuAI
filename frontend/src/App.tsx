@@ -654,7 +654,7 @@ export default function App() {
             <div className="upload-panel-heading">
               <div>
                 <h2 id="upload-title">Files in {selectedKnowledgeBase?.name ?? "this folder"}</h2>
-                <p>PDF, DOCX, or TXT · up to 5 GB per file</p>
+                <p>PDF, DOCX, or TXT · up to 25 MB per file</p>
               </div>
               <button className="icon-button" aria-label="Close uploads" onClick={() => setIsUploadPanelOpen(false)} disabled={isBusy}><X /></button>
             </div>

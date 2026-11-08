@@ -14,7 +14,7 @@ from app.models.document import Document
 from app.schemas.document import DocumentResponse, DocumentListResponse, DocumentUploadResponse, DocumentStatusResponse
 from app.services.document_service import owned_kb, owned_document, process_upload
 from app.services.storage import delete_file
-from app.core.config import get_settings
+from app.core.config import max_upload_mb
 router = APIRouter(prefix='/knowledge-bases/{kb_id}/documents', tags=['Documents'])
 
 def _fail_stale_processing(db: Session, kb_id: UUID):
@@ -47,7 +47,7 @@ def _process_upload_in_worker(user_id, kb_id, filename: str, data: bytes):
 
 @router.post('', response_model=DocumentUploadResponse, status_code=201)
 async def upload(kb_id: UUID, file: UploadFile=File(...), user: User=Depends(current_user)):
-    max_bytes = get_settings().MAX_UPLOAD_MB * 1_000_000
+    max_bytes = max_upload_mb() * 1_000_000
     data = await file.read(max_bytes + 1)
     if len(data) > max_bytes:
         raise HTTPException(413, 'File too large')

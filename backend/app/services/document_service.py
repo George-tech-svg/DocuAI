@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 import logging
 from time import perf_counter
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
 from app.models.document import Document
@@ -13,9 +13,9 @@ from app.services.knowledge_base_service import get_knowledge_base, KnowledgeBas
 from app.services.file_validation import validate_upload
 from app.services.extraction import extract_pages
 from app.services.chunking import chunk_pages
-from app.services.embeddings import embed_texts
+from app.services.embeddings import iter_embedding_batches
 from app.services.storage import store_file, delete_file
-from app.core.config import get_settings
+from app.core.config import max_upload_mb
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ def owned_document(db, user_id, kb_id, doc_id):
 def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes):
     """Store document metadata, extract text, generate embeddings, and update status."""
     owned_kb(db, user_id, kb_id)
-    name, mime = validate_upload(filename, data, get_settings().MAX_UPLOAD_MB)
+    name, mime = validate_upload(filename, data, max_upload_mb())
     doc = Document(knowledge_base_id=kb_id, original_filename=name, content_type=mime, file_size_bytes=len(data), status='pending', chunk_count=0)
     db.add(doc)
     db.commit()
@@ -56,17 +56,37 @@ def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes):
         logger.info('Document %s: extracting text.', doc.id)
         pages = extract_pages(name, data)
         logger.info('Document %s: extracted %s page(s) in %.1f seconds.', doc.id, len(pages), perf_counter() - stage_started)
+        if sum(len(text) for _, text in pages) > 2_000_000:
+            raise ValueError('The extracted document text is too large to index on this service (maximum 2 million characters).')
         stage_started = perf_counter()
         chunks = chunk_pages(pages)
         if not chunks:
             raise ValueError('No extractable text found. Scanned PDFs require OCR.')
         logger.info('Document %s: created %s text chunk(s).', doc.id, len(chunks))
         stage_started = perf_counter()
-        logger.info('Document %s: generating embeddings.', doc.id)
-        vectors = embed_texts([content for _, content in chunks])
+        logger.info('Document %s: generating embeddings in batches.', doc.id)
+        for batch_start in range(0, len(chunks), 32):
+            batch_chunks = chunks[batch_start:batch_start + 32]
+            batch_contents = [content for _, content in batch_chunks]
+            vectors = [
+                vector
+                for vector_batch in iter_embedding_batches(batch_contents, batch_size=8)
+                for vector in vector_batch
+            ]
+            for offset, ((page, content), embedding) in enumerate(zip(batch_chunks, vectors)):
+                db.add(DocumentChunk(
+                    document_id=doc.id,
+                    chunk_index=batch_start + offset,
+                    page_number=page,
+                    content=content,
+                    embedding=embedding,
+                ))
+            # Persist bounded batches and refresh the processing timestamp. If
+            # Render terminates the worker, the status endpoint can identify
+            # the last point at which real progress was made.
+            doc.updated_at = datetime.now(timezone.utc)
+            db.commit()
         logger.info('Document %s: generated embeddings in %.1f seconds.', doc.id, perf_counter() - stage_started)
-        for i, ((page, content), embedding) in enumerate(zip(chunks, vectors)):
-            db.add(DocumentChunk(document_id=doc.id, chunk_index=i, page_number=page, content=content, embedding=embedding))
         stage_started = perf_counter()
         logger.info('Document %s: saving original file to Cloudinary.', doc.id)
         stored = store_file(name, data)
@@ -84,6 +104,7 @@ def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes):
     except Exception as exc:
         logger.exception('Document processing failed for document %s', doc.id)
         db.rollback()
+        db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == doc.id))
         if stored:
             try:
                 delete_file(stored['public_id'], stored['resource_type'])

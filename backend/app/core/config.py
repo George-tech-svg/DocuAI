@@ -11,6 +11,7 @@ from sqlalchemy.engine import make_url
 # repository root or backend/ without relying on the shell's working directory.
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PROJECT_ENV_FILES = (PROJECT_ROOT / 'frontend' / '.env', PROJECT_ROOT / 'backend' / '.env')
+MAX_SAFE_UPLOAD_MB = 25
 
 class Settings(BaseSettings):
     DATABASE_URL: str
@@ -23,8 +24,8 @@ class Settings(BaseSettings):
     )
     FRONTEND_ORIGINS: str = ''
     MAX_UPLOAD_MB: int = Field(
-        # 5 GB decimal ceiling (5,000,000,000 bytes).
-        default=5000,
+        # Keep per-request memory bounded on the current CPU-only web service.
+        default=25,
         validation_alias=AliasChoices('MAX_UPLOAD_MB', 'MAX_UPLOAD_SIZE_MB'),
     )
     CLOUDINARY_CLOUD_NAME: str = ''
@@ -41,6 +42,11 @@ class Settings(BaseSettings):
 def get_settings():
     """Return cached application settings loaded from the environment."""
     return Settings()
+
+
+def max_upload_mb() -> int:
+    """Apply a conservative per-file cap even if hosting env is oversized."""
+    return min(get_settings().MAX_UPLOAD_MB, MAX_SAFE_UPLOAD_MB)
 
 
 def psycopg_database_url(database_url: str) -> str:
