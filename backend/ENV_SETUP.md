@@ -38,9 +38,12 @@ application metadata defaults. No frontend API URL is needed for the shared
 domain.
 
 The backend build preloads FastEmbed's ONNX model into `backend/model-cache`
-and validates that it can produce a 384-dimensional vector. `vercel.json`
-includes that directory in the backend function. If the preload fails, the
-deployment build should fail with the underlying download or model error.
+and validates that it can produce a 384-dimensional vector. The cache is inside
+the backend service root, where Vercel's Python runtime packages project files
+reachable at build time. If model preloading fails, the deployment build should
+fail with the underlying download or model error. The Vercel Services schema
+does not accept `includeFiles` inside a service definition, so it is not set in
+`vercel.json`.
 
 Vercel's normal function request body limit is 4.5 MB. Its optional 20 MiB
 request-body beta requires eligible plan settings, Fluid Compute, and 4 GB
