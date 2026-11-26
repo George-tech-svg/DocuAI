@@ -544,7 +544,7 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
     flex: none;
     flex-direction: column;
     gap: 12px;
-    width: min(86vw, 320px);
+    width: min(100vw, 420px);
     height: 100dvh;
     max-height: none;
     overflow-x: hidden;
@@ -564,6 +564,10 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
     visibility: visible;
     pointer-events: auto;
   }
+  .shell > aside .folder-tree,
+  .shell > aside .folder-tree-item,
+  .shell > aside .folder-tree-row,
+  .shell > aside .document-tree-row { width: 100%; min-width: 0; }
   .shell > aside .brand { padding: 4px 38px 4px 2px; font-size: 19px; }
   .shell > aside .brand svg { width: 22px; height: 22px; }
   .shell > aside .sidebar-close {
@@ -609,4 +613,41 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
   }
   .shell > aside .workspace-label { display: flex; }
   .shell > aside .sidebottom button { width: 100%; }
+}
+
+/* Warm, high-contrast phone layout with room for long file names and controls. */
+@media (max-width: 700px) {
+  :root, html, body, #root, .shell, main { background-color: #f0e2bf; }
+
+  .mobile-topbar,
+  .shell > aside {
+    background-color: #f2e6c9;
+    background-image:
+      linear-gradient(45deg, transparent 49%, rgb(168 137 77 / 8%) 50%, transparent 51%),
+      linear-gradient(-45deg, transparent 49%, rgb(168 137 77 / 8%) 50%, transparent 51%);
+    background-size: 48px 48px;
+  }
+
+  .shell > main > .chat {
+    background: #f8efd9;
+    border-color: #dfd0aa;
+  }
+
+  .chat > .composer { background: #f8efd9; border-top-color: #e5d8b9; }
+  .composer input { background: #fcf7eb; border-color: #ddcfad; }
+
+  .shell > aside .folder-tree-row,
+  .shell > aside .document-tree-row { overflow: visible; }
+
+  .shell > aside .folder-select span { white-space: normal; overflow-wrap: anywhere; }
+}
+
+@media (max-width: 480px) {
+  .shell > main > .chat { padding: 12px; }
+  .chat-heading { flex-wrap: wrap; align-items: flex-start; }
+  .chat-heading > div:first-child { flex: 1 1 100%; min-width: 0; }
+  .chat-heading h2 { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+  .chat-heading p { max-width: 100%; }
+  .chat-actions { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+  .chat-actions .upload-trigger { margin-left: auto; }
 }
