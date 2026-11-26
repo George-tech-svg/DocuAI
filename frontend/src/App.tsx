@@ -5,8 +5,8 @@ import {
   BookOpen,
   Archive,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
-  CreditCard,
   CreditCard,
   Download,
   HelpCircle,
@@ -20,6 +20,7 @@ import {
   Plus,
   Printer,
   Send,
+  Settings as SettingsIcon,
   ShieldCheck,
   Trash2,
   Upload,
@@ -30,6 +31,7 @@ import { getErrorMessage, request } from "./api";
 import AssistantMessage from "./AssistantMessage";
 import AdminDashboard from "./AdminDashboard";
 import BillingPage from "./BillingPage";
+import TermsPrivacy from "./TermsPrivacy";
 import type {
   AuthenticationResponse,
   ChatMessage,
@@ -117,7 +119,8 @@ export default function App() {
     localStorage.getItem("documind_token") ?? ""
   );
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [activePage, setActivePage] = useState<"workspace" | "admin" | "billing">("workspace");
+  const [activePage, setActivePage] = useState<"workspace" | "admin" | "billing" | "settings">("workspace");
+  const [legalPage, setLegalPage] = useState<"terms" | "privacy" | null>(null);
   const [isRegistering, setIsRegistering] = useState(false);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -395,6 +398,13 @@ export default function App() {
     setIsMobileSidebarOpen(false);
     setUserProfile(null);
     setActivePage("workspace");
+    setLegalPage(null);
+    setErrorMessage("");
+  }
+
+  function openLegalPage(page: "terms" | "privacy") {
+    setLegalPage(page);
+    setIsMobileSidebarOpen(false);
   }
 
   /** Start an empty conversation while keeping the selected folder and file. */
@@ -740,6 +750,10 @@ export default function App() {
     }
   }
 
+  if (legalPage) {
+    return <TermsPrivacy document={legalPage} onOpen={setLegalPage} onBack={() => setLegalPage(null)} />;
+  }
+
   // Before login, show only the authentication form.
   if (!token) {
     return (
@@ -832,9 +846,27 @@ export default function App() {
             </button>
           </p>
         </form>}
+        <nav className="auth-legal-nav" aria-label="Legal information">
+          <button type="button" onClick={() => openLegalPage("terms")}>Terms of service</button>
+          <span aria-hidden="true">·</span>
+          <button type="button" onClick={() => openLegalPage("privacy")}>Privacy notice</button>
+        </nav>
       </div>
     );
   }
+
+  if (activePage === "settings") return (
+    <main className="settings-wrap">
+      <section className="settings-card">
+        <button className="legal-back" type="button" onClick={() => setActivePage("workspace")}><ChevronLeft size={17} /> Back to workspace</button>
+        <div className="settings-heading"><SettingsIcon size={23} /><div><h1>Account settings</h1><p>Manage your session and find service information.</p></div></div>
+        <section className="settings-detail"><h2>Signed-in account</h2><p><strong>Name</strong><span>{userProfile?.full_name ?? "Loading account…"}</span></p><p><strong>Email</strong><span>{userProfile?.email ?? ""}</span></p></section>
+        <section className="settings-detail"><h2>Plan and billing</h2><p>Review your plan or subscription payment status.</p><button type="button" onClick={() => setActivePage("billing")}><CreditCard size={16} /> Open plan &amp; billing</button></section>
+        <section className="settings-detail"><h2>Legal and privacy</h2><div className="settings-links"><button type="button" onClick={() => openLegalPage("terms")}>Read Terms of service</button><button type="button" onClick={() => openLegalPage("privacy")}>Read Privacy notice</button></div></section>
+        <button className="settings-signout" type="button" onClick={handleLogout}><LogOut size={17} /> Sign out of this account</button>
+      </section>
+    </main>
+  );
 
   if (activePage === "admin") return <AdminDashboard token={token} onBack={() => setActivePage("workspace")} />;
   if (activePage === "billing") return <BillingPage token={token} onBack={() => setActivePage("workspace")} />;
@@ -1044,6 +1076,9 @@ export default function App() {
           <button type="button" onClick={() => { setActivePage("billing"); setIsMobileSidebarOpen(false); }}>
             <CreditCard size={17} /> Plan &amp; billing
           </button>
+          <button type="button" onClick={() => { setActivePage("settings"); setIsMobileSidebarOpen(false); }}>
+            <SettingsIcon size={17} /> Account settings
+          </button>
           {userProfile?.is_superuser && (
             <button type="button" onClick={() => { setActivePage("admin"); setIsMobileSidebarOpen(false); }}>
               <ShieldCheck size={17} /> Admin console
@@ -1052,6 +1087,11 @@ export default function App() {
           <button onClick={handleLogout}>
             <LogOut size={17} /> Sign out
           </button>
+          <div className="sidebar-legal-links">
+            <button type="button" onClick={() => openLegalPage("terms")}>Terms</button>
+            <span aria-hidden="true">·</span>
+            <button type="button" onClick={() => openLegalPage("privacy")}>Privacy</button>
+          </div>
         </div>
       </aside>
 
@@ -1245,7 +1285,7 @@ export default function App() {
                     <small>{document.status} · {document.chunk_count} passages · {(document.file_size_bytes / 1024).toFixed(0)} KB</small>
                     {document.processing_error && <small className="error document-error">{document.processing_error}</small>}
                   </div>
-                  <button onClick={() => void handleDeleteDocument(document.id)} title="Delete file" aria-label={`Delete ${document.original_filename}`}><Trash2 size={16} /></button>
+                  <button onClick={() => void handleDeleteDocument(selectedKnowledgeBaseId, document.id)} title="Delete file" aria-label={`Delete ${document.original_filename}`}><Trash2 size={16} /></button>
                 </div>
               ))}
               {documents.length === 0 && <p className="muted">No files in this folder yet.</p>}

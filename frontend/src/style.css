@@ -28,6 +28,8 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .auth-card>button { width: 100%; margin-top: 12px; }
 .auth-card a { color: #16734f; cursor: pointer; }
 .auth-toggle { background: none; border: 0; color: inherit; cursor: pointer; text-decoration: underline; padding: 0; }
+.auth-legal-nav { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 17px; color: #607687; font-size: 12px; }
+.auth-legal-nav button, .sidebar-legal-links button { border: 0; padding: 5px 2px; background: transparent; color: #286fa9; text-decoration: underline; }
 
 /* The requested blue workspace and the two-panel chat layout. */
 :root { color: #24394b; background: #007bff; }
@@ -47,6 +49,8 @@ nav button { color: #526a7a; }
 nav button:hover { background: #d6e4ec; }
 nav button.selected { background: #cce0ec; color: #235f88; }
 .sidebottom button { background: #d8e5ec; color: #425f73; }
+.sidebar-legal-links { display: flex; align-items: center; justify-content: center; gap: 7px; padding-top: 2px; color: #78909e; font-size: 12px; }
+.sidebar-legal-links button { color: #526a7a; }
 main { display: grid; grid-template-rows: minmax(0, 1fr); flex: 1 1 0; width: 0; height: 100%; min-height: 0; overflow: hidden; padding: 18px; }
 .chat { display: flex; flex: 1 1 auto; flex-direction: column; width: 100%; height: 100%; min-height: 0; overflow: hidden; padding: 20px 24px; background: #f1f4f1; border-color: #c8d6df; }
 .chat-heading, .upload-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
@@ -710,7 +714,47 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
 .billing-message { display: flex; align-items: center; gap: 9px; width: 100%; max-width: 1160px; margin: 0 auto 14px; padding: 12px 14px; border: 1px solid #bedbc6; border-radius: 9px; background: #e3f1e7; color: #246344; font-size: 13px; }
 .billing-plan-list { display: grid; gap: 10px; margin-bottom: 28px; }
 
+.legal-wrap, .settings-wrap { position: fixed; inset: 0; z-index: 8; display: block; width: auto; height: auto; min-width: 0; min-height: 100dvh; flex: none; grid-template-rows: none; overflow: auto; padding: max(20px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); background: #e7f0e8; color: #24394b; }
+.legal-card, .settings-card { width: min(850px, 100%); margin: 0 auto; padding: clamp(18px, 4vw, 38px); border: 1px solid #c8d6df; border-radius: 18px; background: #f4f6f2; box-shadow: 0 14px 45px #18394a18; }
+.legal-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 18px; border-bottom: 1px solid #d6e0e3; }
+.legal-header .brand { font-size: 20px; }
+.legal-back { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 8px 11px; border: 1px solid #c8d6df; border-radius: 9px; background: #e8eff1; color: #345d76; }
+.legal-back:hover { background: #dce9ee; }
+.legal-title, .settings-heading { display: flex; align-items: center; gap: 12px; margin: 22px 0 12px; color: #327fc1; }
+.legal-title h1, .settings-heading h1 { margin: 0 0 4px; color: #24465f; font-size: clamp(23px, 4vw, 31px); }
+.legal-title p, .settings-heading p { margin: 0; color: #708087; font-size: 13px; }
+.legal-switch { display: flex; gap: 5px; padding-bottom: 14px; border-bottom: 1px solid #d6e0e3; }
+.legal-switch button { min-height: 36px; padding: 7px 13px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: #526a7a; }
+.legal-switch button.selected { border-color: #c8d6df; background: #e3edf1; color: #245f85; font-weight: 700; }
+.legal-lead { margin: 18px 0; color: #506a7a; font-size: 15px; line-height: 1.65; }
+.legal-contents { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 16px; margin: 18px 0 24px; padding: 16px; border: 1px solid #d4dfdf; border-radius: 12px; background: #edf2ee; }
+.legal-contents strong { grid-column: 1 / -1; margin-bottom: 3px; color: #315b47; }
+.legal-contents a, .legal-card section a { color: #286fa9; text-underline-offset: 2px; }
+.legal-card section { scroll-margin-top: 12px; margin: 22px 0; }
+.legal-card section h2 { margin: 0 0 8px; color: #315b47; font-size: 17px; }
+.legal-card section p { margin: 0; color: #506575; font-size: 14px; line-height: 1.7; }
+.legal-footer { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin-top: 26px; padding-top: 17px; border-top: 1px solid #d6e0e3; }
+.legal-footer > button:first-child, .settings-links button { border: 0; background: transparent; color: #286fa9; text-decoration: underline; text-underline-offset: 2px; }
+.settings-wrap { display: grid; place-items: start center; }
+.settings-card { width: min(680px, 100%); }
+.settings-heading { margin: 22px 0; }
+.settings-detail { margin: 14px 0; padding: 17px; border: 1px solid #d4dfdf; border-radius: 12px; background: #edf2ee; }
+.settings-detail h2 { margin: 0 0 10px; color: #315b47; font-size: 16px; }
+.settings-detail p { display: flex; justify-content: space-between; gap: 14px; margin: 8px 0 0; color: #506575; font-size: 13px; }
+.settings-detail p strong { color: #345d76; }
+.settings-detail > button, .settings-signout { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; margin-top: 7px; padding: 9px 12px; border: 1px solid #c8d6df; border-radius: 9px; background: #e3edf1; color: #345d76; }
+.settings-links { display: flex; flex-wrap: wrap; gap: 12px; }
+.settings-signout { width: 100%; justify-content: center; margin-top: 15px; border-color: #327fc1; background: #327fc1; color: #fff; font-weight: 650; }
+
 @media (max-width: 700px) {
+  .legal-wrap, .settings-wrap { padding: max(10px, env(safe-area-inset-top)) 10px max(12px, env(safe-area-inset-bottom)); }
+  .legal-card, .settings-card { padding: 17px; border-radius: 13px; }
+  .legal-header .brand { gap: 6px; font-size: 17px; }
+  .legal-header .brand svg { width: 20px; }
+  .legal-contents { grid-template-columns: 1fr; }
+  .legal-contents strong { grid-column: auto; }
+  .legal-card section { scroll-margin-top: 8px; }
+  .settings-detail p { flex-direction: column; gap: 2px; }
   .admin-shell { padding: max(14px, env(safe-area-inset-top)) 14px max(18px, env(safe-area-inset-bottom)); }
   .admin-header { gap: 10px; align-items: flex-start; }
   .admin-header h1 { font-size: 20px; }
