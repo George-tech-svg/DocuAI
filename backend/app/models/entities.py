@@ -95,6 +95,8 @@ class Message(Base):
     conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('conversations.id', ondelete='CASCADE'), index=True)
     role: Mapped[str] = mapped_column(String(20))
     content: Mapped[str] = mapped_column(Text)
+    # Retain the position column required by the existing Neon schema.
+    message_index: Mapped[int] = mapped_column(Integer, default=0, server_default='0')
     sources_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

@@ -6,7 +6,7 @@ from time import perf_counter
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from starlette.concurrency import run_in_threadpool
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 from app.db.session import get_db, get_engine
 from app.api.dependencies import current_user
@@ -66,8 +66,24 @@ def _save_chat(user_id, knowledge_base_id, conversation_id, question, answer, so
             )
             db.add(conversation)
             db.flush()
-        db.add(Message(conversation_id=conversation.id, role='user', content=question))
-        db.add(Message(conversation_id=conversation.id, role='assistant', content=answer, sources_json=json.dumps([s.model_dump(mode='json') for s in sources])))
+        next_message_index = db.scalar(
+            select(func.coalesce(func.max(Message.message_index), -1)).where(
+                Message.conversation_id == conversation.id
+            )
+        ) + 1
+        db.add(Message(
+            conversation_id=conversation.id,
+            message_index=next_message_index,
+            role='user',
+            content=question,
+        ))
+        db.add(Message(
+            conversation_id=conversation.id,
+            message_index=next_message_index + 1,
+            role='assistant',
+            content=answer,
+            sources_json=json.dumps([s.model_dump(mode='json') for s in sources]),
+        ))
         db.commit()
         return conversation.id
 
