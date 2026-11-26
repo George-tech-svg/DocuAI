@@ -54,15 +54,23 @@ domain.
 
 Create an OAuth 2.0 Client ID of type **Web application** in Google Cloud
 Console, configure the consent screen, and add the production site origin
-(`https://docuai-jet.vercel.app`) under Authorized JavaScript origins. Add
-`http://localhost:5173` for local Vite development. Set the same client ID in
-backend `GOOGLE_CLIENT_ID` and frontend build variable `VITE_GOOGLE_CLIENT_ID`.
-The client ID is public; do not put a client secret in the frontend. The
-backend verifies Google's signed ID token and verified email before creating
-or signing into a database account. The Google button stays hidden until the
-frontend client ID is configured. Add `VITE_GOOGLE_CLIENT_ID` to Vercel's
-frontend build environment and `GOOGLE_CLIENT_ID` to the backend environment,
-then redeploy both services.
+(`https://docuai-ljxe.vercel.app`) under Authorized JavaScript origins. If
+`https://docuai-jet.vercel.app` is also an active site alias, add that origin
+too. Add `http://localhost:5173` for local Vite development. Set the client ID in
+backend `GOOGLE_CLIENT_ID`. The client ID is public; do not put a client
+secret in the frontend. The app reads the public client ID from the backend,
+so a `VITE_GOOGLE_CLIENT_ID` frontend build variable is optional. The backend
+verifies Google's signed ID token and verified email before creating or
+signing into a database account. Add `GOOGLE_CLIENT_ID` to Vercel's project
+environment and redeploy. A frontend `VITE_GOOGLE_CLIENT_ID` can be set to the
+same ID as an optional fallback.
+
+Password-based and Google registrations require acceptance of the Terms of
+Service and Privacy Notice. Password registration confirms both password
+entries before it sends the account creation request. Google login and account
+creation are separate actions; to register a new Google account, switch to
+Create account and accept the terms first. `GOOGLE_CLIENT_ID` can be exposed
+as a Config value in Vercel; it is a public OAuth client ID, not a secret.
 
 The backend build preloads FastEmbed's ONNX model into `backend/model-cache`
 and validates that it can produce a 384-dimensional vector. The cache is inside

@@ -126,6 +126,8 @@ export default function App() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false);
   const [adminBootstrapAvailable, setAdminBootstrapAvailable] = useState(false);
   const [showAdminBootstrap, setShowAdminBootstrap] = useState(false);
   const [adminSetupCode, setAdminSetupCode] = useState("");
@@ -336,6 +338,14 @@ export default function App() {
   /** Register a new user or sign in an existing user. */
   async function handleAuthentication(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isRegistering && password !== confirmPassword) {
+      setErrorMessage("Your passwords do not match.");
+      return;
+    }
+    if (isRegistering && !hasAcceptedTerms) {
+      setErrorMessage("Accept the Terms of Service and Privacy Notice to create your account.");
+      return;
+    }
     setIsBusy(true);
     setBusyMessage(isRegistering ? "Creating your account..." : "Signing you in...");
     setErrorMessage("");
@@ -343,7 +353,7 @@ export default function App() {
     try {
       const endpoint = isRegistering ? "/auth/register" : "/auth/login";
       const credentials = isRegistering
-        ? { full_name: fullName, email, password }
+        ? { full_name: fullName, email, password, accept_terms: hasAcceptedTerms }
         : { email, password };
 
       const response = await request<AuthenticationResponse>(endpoint, "", {
@@ -363,13 +373,17 @@ export default function App() {
 
   async function handleAdminBootstrap(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!hasAcceptedTerms) {
+      setErrorMessage("Accept the Terms of Service and Privacy Notice to create an account.");
+      return;
+    }
     setIsBusy(true);
     setBusyMessage("Creating the first administrator...");
     setErrorMessage("");
     try {
       const response = await request<AuthenticationResponse>("/auth/admin/bootstrap", "", {
         method: "POST",
-        body: JSON.stringify({ full_name: fullName, email, password, setup_code: adminSetupCode }),
+        body: JSON.stringify({ full_name: fullName, email, password, setup_code: adminSetupCode, accept_terms: hasAcceptedTerms }),
       });
       localStorage.setItem("documind_token", response.access_token);
       setAdminBootstrapAvailable(false);
@@ -383,14 +397,18 @@ export default function App() {
     }
   }
 
-  async function handleGoogleSignIn(credential: string) {
+  async function handleGoogleSignIn(credential: string, mode: "login" | "register", acceptedTerms: boolean) {
+    if (mode === "register" && !acceptedTerms) {
+      setErrorMessage("Accept the Terms of Service and Privacy Notice before creating your account.");
+      return;
+    }
     setIsBusy(true);
-    setBusyMessage("Signing you in with Google...");
+    setBusyMessage(mode === "register" ? "Creating your account with Google..." : "Signing you in with Google...");
     setErrorMessage("");
     try {
       const response = await request<AuthenticationResponse>("/auth/google", "", {
         method: "POST",
-        body: JSON.stringify({ credential }),
+        body: JSON.stringify({ credential, mode, accept_terms: acceptedTerms }),
       });
       localStorage.setItem("documind_token", response.access_token);
       setToken(response.access_token);
@@ -788,6 +806,11 @@ export default function App() {
           <input type="email" required placeholder="Email address" value={email} onChange={(event) => setEmail(event.target.value)} />
           <input type="password" required minLength={8} maxLength={128} autoComplete="new-password" placeholder="Password (at least 8 characters)" value={password} onChange={(event) => setPassword(event.target.value)} />
           <input type="password" required minLength={16} maxLength={256} autoComplete="off" placeholder="Private setup code" value={adminSetupCode} onChange={(event) => setAdminSetupCode(event.target.value)} />
+          <div className="auth-terms">
+            <label><input type="checkbox" required checked={hasAcceptedTerms} onChange={(event) => setHasAcceptedTerms(event.target.checked)} /><span>I agree to the</span></label>
+            <button type="button" onClick={() => openLegalPage("terms")}>Terms of Service</button><span>and</span>
+            <button type="button" onClick={() => openLegalPage("privacy")}>Privacy Notice</button><span>.</span>
+          </div>
           {errorMessage && <p className="error">{errorMessage}</p>}
           <button disabled={isBusy}>{isBusy ? "Please wait..." : "Register first administrator"}</button>
           <p><button type="button" className="auth-toggle" onClick={() => { setShowAdminBootstrap(false); setErrorMessage(""); }}>Back to sign in</button></p>
@@ -836,6 +859,34 @@ export default function App() {
           />
 
           {isRegistering && (
+            <>
+              <input
+                type="password"
+                required
+                minLength={4}
+                maxLength={128}
+                autoComplete="new-password"
+                placeholder="Confirm password"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+              />
+              {confirmPassword && password !== confirmPassword && (
+                <p className="error password-mismatch" role="status">Passwords do not match.</p>
+              )}
+              <div className="auth-terms">
+                <label>
+                  <input type="checkbox" required checked={hasAcceptedTerms} onChange={(event) => setHasAcceptedTerms(event.target.checked)} />
+                  <span>I agree to the</span>
+                </label>
+                <button type="button" onClick={() => openLegalPage("terms")}>Terms of Service</button>
+                <span>and</span>
+                <button type="button" onClick={() => openLegalPage("privacy")}>Privacy Notice</button>
+                <span>.</span>
+              </div>
+            </>
+          )}
+
+          {isRegistering && (
             <p className="muted">
               Use at least 4 characters. Numbers are allowed.
             </p>
@@ -857,6 +908,8 @@ export default function App() {
               className="auth-toggle"
               onClick={() => {
                 setIsRegistering(!isRegistering);
+                setConfirmPassword("");
+                setHasAcceptedTerms(false);
                 setErrorMessage("");
               }}
             >
@@ -866,7 +919,13 @@ export default function App() {
             </button>
           </p>
         </form>}
-        {!showAdminBootstrap && <GoogleSignIn onCredential={(credential) => void handleGoogleSignIn(credential)} />}
+        {!showAdminBootstrap && (
+          <GoogleSignIn
+            mode={isRegistering ? "register" : "login"}
+            acceptedTerms={hasAcceptedTerms}
+            onCredential={(credential, mode, accepted) => void handleGoogleSignIn(credential, mode, accepted)}
+          />
+        )}
         <nav className="auth-legal-nav" aria-label="Legal information">
           <button type="button" onClick={() => openLegalPage("terms")}>Terms of service</button>
           <span aria-hidden="true">·</span>

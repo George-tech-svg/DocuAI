@@ -8,12 +8,18 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.api.dependencies import current_user
 from app.models.user import User
-from app.schemas.auth import UserRegister, UserLogin, GoogleLoginRequest, AdminBootstrapRequest, UserResponse, AuthResponse
+from app.schemas.auth import UserRegistrationRequest, UserLogin, GoogleLoginRequest, AdminBootstrapRequest, UserResponse, AuthResponse
 from app.services.auth_service import register_user, authenticate_user, EmailAlreadyRegisteredError, AuthenticationError
 from app.core.security import create_access_token
 from app.core.config import get_settings
 from app.core.security import hash_password, verify_password
 router = APIRouter(prefix='/auth', tags=['Authentication'])
+
+@router.get('/google/config')
+def google_sign_in_config():
+    """Return the public Google client ID so sign-in also works without a Vite build variable."""
+    client_id = get_settings().GOOGLE_CLIENT_ID.strip()
+    return {'enabled': bool(client_id), 'client_id': client_id or None}
 
 @router.get('/admin/bootstrap/status')
 def admin_bootstrap_status(db: Session=Depends(get_db)):
@@ -55,7 +61,7 @@ def bootstrap_admin(data: AdminBootstrapRequest, db: Session=Depends(get_db)):
     return AuthResponse(user=UserResponse.model_validate(user), access_token=create_access_token(str(user.id)))
 
 @router.post('/register', response_model=AuthResponse, status_code=201)
-def register(data: UserRegister, db: Session=Depends(get_db)):
+def register(data: UserRegistrationRequest, db: Session=Depends(get_db)):
     try:
         user = register_user(db, data)
     except EmailAlreadyRegisteredError:
@@ -74,7 +80,8 @@ def login(data: UserLogin, db: Session=Depends(get_db)):
 def google_login(data: GoogleLoginRequest, db: Session=Depends(get_db)):
     """Verify a Google ID token and create or sign in to the matching account."""
     settings = get_settings()
-    if not settings.GOOGLE_CLIENT_ID:
+    client_id = settings.GOOGLE_CLIENT_ID.strip()
+    if not client_id:
         raise HTTPException(503, 'Google sign-in is not configured.')
 
     try:
@@ -83,7 +90,7 @@ def google_login(data: GoogleLoginRequest, db: Session=Depends(get_db)):
         from google.oauth2 import id_token
 
         identity = id_token.verify_oauth2_token(
-            data.credential, GoogleRequest(), audience=settings.GOOGLE_CLIENT_ID
+            data.credential, GoogleRequest(), audience=client_id
         )
     except (ValueError, GoogleAuthError):
         raise HTTPException(401, 'Google could not verify this sign-in. Please try again.')
@@ -97,10 +104,16 @@ def google_login(data: GoogleLoginRequest, db: Session=Depends(get_db)):
     if user is not None:
         if not user.is_active:
             raise HTTPException(403, 'This account is disabled. Contact support for help.')
+        if data.mode == 'register':
+            raise HTTPException(409, 'An account with this Google email already exists. Choose Sign in instead.')
         user.is_verified = True
         db.commit()
         db.refresh(user)
     else:
+        if data.mode == 'login':
+            raise HTTPException(404, 'No account was found for this Google email. Choose Create account to register.')
+        if not data.accept_terms:
+            raise HTTPException(400, 'Accept the Terms of Service and Privacy Notice before creating your account.')
         user = User(
             full_name=full_name,
             email=email,
