@@ -15,7 +15,7 @@ from app.services.extraction import extract_pages
 from app.services.chunking import chunk_pages
 from app.services.embeddings import iter_embedding_batches
 from app.services.storage import store_file, delete_file
-from app.core.config import max_upload_mb
+from app.core.config import max_extracted_chars, max_upload_mb
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +62,12 @@ def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes, docu
         logger.info('Document %s: extracting text.', doc.id)
         pages = extract_pages(name, data)
         logger.info('Document %s: extracted %s page(s) in %.1f seconds.', doc.id, len(pages), perf_counter() - stage_started)
-        if sum(len(text) for _, text in pages) > 2_000_000:
-            raise ValueError('The extracted document text is too large to index on this service (maximum 2 million characters).')
+        extracted_chars = sum(len(text) for _, text in pages)
+        if extracted_chars > max_extracted_chars():
+            raise ValueError(
+                'The extracted document text is too large to index on this service '
+                f'(maximum {max_extracted_chars():,} characters).'
+            )
         stage_started = perf_counter()
         chunks = chunk_pages(pages)
         if not chunks:
@@ -76,7 +80,7 @@ def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes, docu
             batch_contents = [content for _, content in batch_chunks]
             vectors = [
                 vector
-                for vector_batch in iter_embedding_batches(batch_contents, batch_size=8)
+                for vector_batch in iter_embedding_batches(batch_contents, batch_size=16)
                 for vector in vector_batch
             ]
             for offset, ((page, content), embedding) in enumerate(zip(batch_chunks, vectors)):

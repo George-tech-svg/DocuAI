@@ -15,7 +15,8 @@ Additional service configuration:
 - `DEEPSEEK_MODEL`: Optional; defaults to `deepseek-flash`. The current DeepSeek API model names are `deepseek-flash` and `deepseek-v4-pro`; the legacy `deepseek-chat` name was discontinued.
 - `FRONTEND_URL` or `FRONTEND_ORIGIN`: The exact deployed frontend origin, used by backend CORS.
 - `FRONTEND_ORIGINS`: Optional comma-separated list of additional exact frontend origins, such as Vercel preview domains.
-- `MAX_UPLOAD_SIZE_MB` or `MAX_UPLOAD_MB`: Defaults to `20` MB. The API enforces a 20 MB maximum, even if the environment variable is set higher. Extracted text is also capped at 2 million characters.
+- `MAX_UPLOAD_SIZE_MB` or `MAX_UPLOAD_MB`: Defaults to `20` MB. The API enforces a 20 MB maximum, even if the environment variable is set higher.
+- `MAX_EXTRACTED_CHARS`: Defaults to `5,000,000` characters, with a hard maximum of 5 million to bound extraction and indexing work.
 - `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`: Required. An upload is only marked ready after its original is stored in Cloudinary and its text/chunks are saved in Neon.
 
 The Vite frontend reads `VITE_API_BASE_URL` at build time. For this repository's shared Vercel Services deployment, leave it unset; the frontend uses the same-origin `/api/v1` rewrite. If you deploy the backend as a separate project, set it to that backend URL ending in `/api/v1`. Do not use a localhost URL in Vercel. For local development, set `VITE_API_BASE_URL` to your local API URL, or set `VITE_DEV_API_PROXY_TARGET` to the local FastAPI origin when using the relative `/api/v1` default.
@@ -59,7 +60,7 @@ Set Render's `FRONTEND_URL` to the production Vercel domain shown under **Projec
 
 Ready-to-import production settings are in `backend/.env.render`; in Render, open the service's **Environment** page and choose **Add from .env**, select that file, then save and deploy. The file is gitignored because it contains credentials copied from the existing local environment. `frontend/.env.vercel` contains only the public API base URL. Vercel's dashboard does not import a `.env` file; add that single `VITE_API_BASE_URL` value under **Project Settings → Environment Variables** for Production (and Preview if needed), then redeploy.
 
-On Vercel, document indexing completes before the upload request returns because serverless instances may be recycled after a response. On persistent hosts, the API accepts the upload immediately and indexes it in a background task; the frontend polls until it becomes `ready` or `failed`. Heavy indexing is serialized within one backend process, uploads remain capped at 20 MB, extracted text at 2 million characters, and embeddings are generated in small batches.
+On Vercel, document indexing completes before the upload request returns because serverless instances may be recycled after a response. On persistent hosts, the API accepts the upload immediately and indexes it in a background task; the frontend polls until it becomes `ready` or `failed`. Heavy indexing is serialized within one backend process, uploads remain capped at 20 MB, extracted text at 5 million characters, and embeddings are generated in small batches.
 
 The background task runs in the same Render process as the API, so a process restart can still interrupt indexing. The stale-processing check marks abandoned entries failed after 15 minutes. For production reliability across restarts, use a durable job queue and a separate worker. A larger Render instance may also be needed if the service reaches its memory limit. Preload the embedding model during the Render build using the command above; otherwise the first upload downloads it at runtime and can take several minutes.
 

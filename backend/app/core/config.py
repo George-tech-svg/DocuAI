@@ -12,6 +12,7 @@ from sqlalchemy.engine import make_url
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PROJECT_ENV_FILES = (PROJECT_ROOT / 'frontend' / '.env', PROJECT_ROOT / 'backend' / '.env')
 MAX_SAFE_UPLOAD_MB = 20
+MAX_SAFE_EXTRACTED_CHARS = 5_000_000
 
 class Settings(BaseSettings):
     DATABASE_URL: str
@@ -28,6 +29,7 @@ class Settings(BaseSettings):
         default=20,
         validation_alias=AliasChoices('MAX_UPLOAD_MB', 'MAX_UPLOAD_SIZE_MB'),
     )
+    MAX_EXTRACTED_CHARS: int = Field(default=MAX_SAFE_EXTRACTED_CHARS, gt=0)
     CLOUDINARY_CLOUD_NAME: str = ''
     CLOUDINARY_API_KEY: str = ''
     CLOUDINARY_API_SECRET: str = ''
@@ -47,6 +49,11 @@ def get_settings():
 def max_upload_mb() -> int:
     """Apply a conservative per-file cap even if hosting env is oversized."""
     return min(get_settings().MAX_UPLOAD_MB, MAX_SAFE_UPLOAD_MB)
+
+
+def max_extracted_chars() -> int:
+    """Apply a bounded extracted-text cap to protect function memory and time."""
+    return min(get_settings().MAX_EXTRACTED_CHARS, MAX_SAFE_EXTRACTED_CHARS)
 
 
 def psycopg_database_url(database_url: str) -> str:
