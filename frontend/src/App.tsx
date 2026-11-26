@@ -50,6 +50,7 @@ export default function App() {
   const [selectedDocumentId, setSelectedDocumentId] = useState("");
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [expandedKnowledgeBaseIds, setExpandedKnowledgeBaseIds] = useState<Set<string>>(() => new Set());
+  const [expandedDocumentIds, setExpandedDocumentIds] = useState<Set<string>>(() => new Set());
   const [folderDocuments, setFolderDocuments] = useState<Record<string, { items: DocumentRecord[]; loading: boolean; error: string }>>({});
   const [isUploadPanelOpen, setIsUploadPanelOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -284,9 +285,13 @@ export default function App() {
     setIsBusy(true);
     setBusyMessage("Opening saved conversation...");
     setErrorMessage("");
-    setSelectedDocumentId("");
     if (conversation.knowledge_base_id) {
       setSelectedKnowledgeBaseId(conversation.knowledge_base_id);
+    }
+    setSelectedDocumentId(conversation.document_id ?? "");
+    if (conversation.document_id && conversation.knowledge_base_id) {
+      setExpandedKnowledgeBaseIds((previous) => new Set(previous).add(conversation.knowledge_base_id!));
+      setExpandedDocumentIds((previous) => new Set(previous).add(conversation.document_id!));
     }
     try {
       const saved = await request<SavedChatMessage[]>(
@@ -359,6 +364,41 @@ export default function App() {
     setQuestion(prompt);
     setIsHelpPanelOpen(false);
     window.setTimeout(() => questionInputRef.current?.focus(), 0);
+  }
+
+  function clearCurrentConversation() {
+    setConversationId(null);
+    setMessages([]);
+    setQuestion("");
+  }
+
+  function handleSelectKnowledgeBase(knowledgeBaseId: string) {
+    if (knowledgeBaseId !== selectedKnowledgeBaseId || selectedDocumentId) {
+      clearCurrentConversation();
+    }
+    setSelectedKnowledgeBaseId(knowledgeBaseId);
+    setSelectedDocumentId("");
+    setIsMobileSidebarOpen(false);
+  }
+
+  function handleSelectDocument(knowledgeBaseId: string, documentId: string) {
+    if (knowledgeBaseId !== selectedKnowledgeBaseId || documentId !== selectedDocumentId) {
+      clearCurrentConversation();
+    }
+    setSelectedKnowledgeBaseId(knowledgeBaseId);
+    setSelectedDocumentId(documentId);
+    setExpandedKnowledgeBaseIds((previous) => new Set(previous).add(knowledgeBaseId));
+    setExpandedDocumentIds((previous) => new Set(previous).add(documentId));
+    setIsMobileSidebarOpen(false);
+  }
+
+  function toggleDocumentHistory(documentId: string) {
+    setExpandedDocumentIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(documentId)) next.delete(documentId);
+      else next.add(documentId);
+      return next;
+    });
   }
 
   /** Create a private knowledge base for the current user. */
@@ -453,6 +493,7 @@ export default function App() {
       );
       if (selectedDocumentId === documentId) setSelectedDocumentId("");
       await refreshDocuments();
+      await refreshConversationHistory();
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
@@ -589,6 +630,7 @@ export default function App() {
   const visibleConversations = conversationHistory.filter(
     (conversation) => conversation.knowledge_base_id === selectedKnowledgeBaseId
   );
+  const folderConversations = visibleConversations.filter((conversation) => !conversation.document_id);
   const examplePrompts = [
     { label: "Make a teaching summary", prompt: "Create a clear, well-organized teaching summary of this document. Include the main ideas, learning objectives, key terms, and a short conclusion." },
     { label: "Build a lesson plan", prompt: "Turn this document into a practical lesson plan with learning objectives, a suggested teaching sequence, activities, and assessment questions." },
@@ -670,11 +712,7 @@ export default function App() {
                   <button
                     type="button"
                     className={`folder-select ${selectedKnowledgeBaseId === knowledgeBase.id ? "selected" : ""}`}
-                    onClick={() => {
-                      setSelectedKnowledgeBaseId(knowledgeBase.id);
-                      setSelectedDocumentId("");
-                      setIsMobileSidebarOpen(false);
-                    }}
+                    onClick={() => handleSelectKnowledgeBase(knowledgeBase.id)}
                   >
                     <BookOpen size={16} />
                     <span>{knowledgeBase.name}</span>
@@ -684,27 +722,73 @@ export default function App() {
                   <div className="folder-file-tree" aria-label={`Files in ${knowledgeBase.name}`}>
                     {folder?.loading && <small className="folder-tree-note">Loading files…</small>}
                     {folder?.error && <small className="folder-tree-note error">{folder.error}</small>}
-                    {!folder?.loading && !folder?.error && folder?.items.map((document) => (
-                      <button
-                        className={`folder-file-row ${selectedDocumentId === document.id ? "selected" : ""}`}
-                        key={document.id}
-                        title={document.original_filename}
-                        type="button"
-                        disabled={document.status !== "ready"}
-                        aria-pressed={selectedDocumentId === document.id}
-                        onClick={() => {
-                          setSelectedKnowledgeBaseId(knowledgeBase.id);
-                          setSelectedDocumentId((current) => current === document.id ? "" : document.id);
-                          setIsMobileSidebarOpen(false);
-                        }}
-                      >
-                        <FileText size={14} />
-                        <span>{document.original_filename}</span>
-                        {document.status !== "ready" && (
-                          <small>{document.status === "pending" ? "waiting" : document.status}</small>
-                        )}
-                      </button>
-                    ))}
+                    {!folder?.loading && !folder?.error && folder?.items.map((document) => {
+                      const isDocumentExpanded = expandedDocumentIds.has(document.id);
+                      const documentChats = conversationHistory.filter((conversation) => conversation.document_id === document.id);
+                      return (
+                        <div className="document-tree-node" key={document.id}>
+                          <div className="document-tree-row">
+                            <button
+                              className="document-expand"
+                              type="button"
+                              aria-label={`${isDocumentExpanded ? "Collapse" : "Expand"} chats for ${document.original_filename}`}
+                              aria-expanded={isDocumentExpanded}
+                              onClick={() => toggleDocumentHistory(document.id)}
+                            >
+                              {isDocumentExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                            </button>
+                            <button
+                              className={`folder-file-row ${selectedDocumentId === document.id ? "selected" : ""}`}
+                              title={document.original_filename}
+                              type="button"
+                              disabled={document.status !== "ready"}
+                              aria-pressed={selectedDocumentId === document.id}
+                              onClick={() => selectedDocumentId === document.id
+                                ? handleSelectKnowledgeBase(knowledgeBase.id)
+                                : handleSelectDocument(knowledgeBase.id, document.id)}
+                            >
+                              <FileText size={14} />
+                              <span>{document.original_filename}</span>
+                              {document.status !== "ready" && (
+                                <small>{document.status === "pending" ? "waiting" : document.status}</small>
+                              )}
+                            </button>
+                          </div>
+                          {isDocumentExpanded && (
+                            <div className="document-chat-list" aria-label={`Chats about ${document.original_filename}`}>
+                              {isHistoryLoading && <small className="history-empty">Loading chats…</small>}
+                              {!isHistoryLoading && documentChats.length === 0 && (
+                                <small className="history-empty">No chats for this document yet.</small>
+                              )}
+                              {documentChats.map((conversation) => (
+                                <div className={`history-row ${conversationId === conversation.id ? "selected" : ""}`} key={conversation.id}>
+                                  <button
+                                    className="history-open"
+                                    type="button"
+                                    title={conversation.title}
+                                    disabled={isBusy}
+                                    onClick={() => void handleOpenConversation(conversation)}
+                                  >
+                                    <MessageCircle size={13} />
+                                    <span>{conversation.title || "New conversation"}</span>
+                                  </button>
+                                  <button
+                                    className="history-download"
+                                    type="button"
+                                    title={`Download ${conversation.title}`}
+                                    aria-label={`Download conversation: ${conversation.title}`}
+                                    disabled={isBusy}
+                                    onClick={() => void handleDownloadConversation(conversation)}
+                                  >
+                                    <Download size={13} />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                     {!folder?.loading && !folder?.error && folder?.items.length === 0 && (
                       <small className="folder-tree-note">No files yet</small>
                     )}
@@ -724,8 +808,8 @@ export default function App() {
               onClick={() => setIsHistoryExpanded((expanded) => !expanded)}
             >
               {isHistoryExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-              <span>CHAT HISTORY</span>
-              <small>{visibleConversations.length}</small>
+              <span>FOLDER CHATS</span>
+              <small>{folderConversations.length}</small>
             </button>
             <button className="history-new-chat" type="button" onClick={handleNewChat} title="New chat" aria-label="Start a new chat" disabled={isBusy}>
               <Plus size={17} />
@@ -734,10 +818,10 @@ export default function App() {
           {isHistoryExpanded && (
             <div className="history-list" aria-label="Saved conversations">
               {isHistoryLoading && <small className="history-empty">Loading chats…</small>}
-              {!isHistoryLoading && visibleConversations.length === 0 && (
-                <small className="history-empty">Your questions and answers will appear here.</small>
+              {!isHistoryLoading && folderConversations.length === 0 && (
+                <small className="history-empty">Folder-wide and older unlinked chats appear here. File-specific chats are nested under each file.</small>
               )}
-              {visibleConversations.map((conversation) => (
+              {folderConversations.map((conversation) => (
                 <div className={`history-row ${conversationId === conversation.id ? "selected" : ""}`} key={conversation.id}>
                   <button
                     className="history-open"

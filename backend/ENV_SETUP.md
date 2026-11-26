@@ -60,6 +60,10 @@ FastAPI app from the backend directory. For Vite development, set
 `VITE_API_BASE_URL` to the full local API prefix. Never put backend secrets in
 `VITE_*` variables.
 
-Apply database migrations with `npm run migrate` from the repository root.
+Apply database migrations with `npm run migrate` from the repository root. Run
+this after pulling updates that change the database schema and before using the
+new backend. The document-scoped chat history migration adds a nullable link
+from each conversation to its document; existing conversations stay available
+as folder-level chats.
 Local `.env` files do not configure Vercel; update the Vercel project
 environment and redeploy after changing production variables.

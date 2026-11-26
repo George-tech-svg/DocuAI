@@ -34,6 +34,7 @@ def _prepare_chat(user_id, data: ChatRequest, query_vector):
                 Conversation.id == data.conversation_id,
                 Conversation.user_id == user_id,
                 Conversation.knowledge_base_id == data.knowledge_base_id,
+                Conversation.document_id == data.document_id,
             ))
             if conversation is None:
                 raise HTTPException(404, 'Conversation not found')
@@ -46,7 +47,7 @@ def _prepare_chat(user_id, data: ChatRequest, query_vector):
         context = '\n\n'.join((f'[{i}] {name}, page {chunk.page_number}: {chunk.content}' for i, (chunk, name, _) in enumerate(hits, 1)))
         return conversation.id if conversation else None, sources, context, bool(hits), has_processing_documents
 
-def _save_chat(user_id, knowledge_base_id, conversation_id, question, answer, sources):
+def _save_chat(user_id, knowledge_base_id, document_id, conversation_id, question, answer, sources):
     """Persist the completed exchange in a session owned by this worker."""
     with sessionmaker(bind=get_engine())() as db:
         if conversation_id:
@@ -54,6 +55,7 @@ def _save_chat(user_id, knowledge_base_id, conversation_id, question, answer, so
                 Conversation.id == conversation_id,
                 Conversation.user_id == user_id,
                 Conversation.knowledge_base_id == knowledge_base_id,
+                Conversation.document_id == document_id,
             ).with_for_update())
             if conversation is None:
                 raise HTTPException(404, 'Conversation not found')
@@ -61,6 +63,7 @@ def _save_chat(user_id, knowledge_base_id, conversation_id, question, answer, so
             conversation = Conversation(
                 user_id=user_id,
                 knowledge_base_id=knowledge_base_id,
+                document_id=document_id,
                 title=question[:100],
                 is_archived=False,
             )
@@ -109,7 +112,7 @@ async def chat(data: ChatRequest, user: User=Depends(current_user)):
         logger.warning('Chat answer generation completed in %.1f seconds.', perf_counter() - stage_started)
         stage_started = perf_counter()
         saved_conversation_id = await run_in_threadpool(
-            _save_chat, user.id, data.knowledge_base_id, conversation_id,
+            _save_chat, user.id, data.knowledge_base_id, data.document_id, conversation_id,
             data.question, answer, sources,
         )
         logger.warning('Chat persistence completed in %.1f seconds; total %.1f seconds.', perf_counter() - stage_started, perf_counter() - started)

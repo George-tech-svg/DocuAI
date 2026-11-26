@@ -36,6 +36,7 @@ export interface ConversationRecord {
   id: string;
   title: string;
   knowledge_base_id: string | null;
+  document_id: string | null;
   created_at: string;
 }
 

@@ -26,6 +26,7 @@ class ConversationResponse(BaseModel):
     id: UUID
     title: str
     knowledge_base_id: UUID | None
+    document_id: UUID | None = None
     created_at: datetime
 
 class MessageResponse(BaseModel):
