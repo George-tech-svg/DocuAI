@@ -55,7 +55,6 @@ export default function App() {
   const [folderDocuments, setFolderDocuments] = useState<Record<string, { items: DocumentRecord[]; loading: boolean; error: string }>>({});
   const [isUploadPanelOpen, setIsUploadPanelOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
-  const [isHistoryExpanded, setIsHistoryExpanded] = useState(true);
   const [isHelpPanelOpen, setIsHelpPanelOpen] = useState(false);
   const [newKnowledgeBaseName, setNewKnowledgeBaseName] = useState("");
   const [conversationHistory, setConversationHistory] = useState<ConversationRecord[]>([]);
@@ -531,7 +530,7 @@ export default function App() {
   /** Send a question and display the AI answer with its document sources. */
   async function handleSendQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!question.trim() || !selectedKnowledgeBaseId || isBusy) return;
+    if (!question.trim() || !selectedKnowledgeBaseId || !selectedDocumentId || isBusy) return;
 
     const submittedQuestion = question.trim();
     setQuestion("");
@@ -548,7 +547,7 @@ export default function App() {
         method: "POST",
         body: JSON.stringify({
           knowledge_base_id: selectedKnowledgeBaseId,
-          document_id: selectedDocumentId || null,
+          document_id: selectedDocumentId,
           question: submittedQuestion,
           conversation_id: conversationId,
         }),
@@ -656,10 +655,7 @@ export default function App() {
   const selectedKnowledgeBase = knowledgeBases.find(
     (knowledgeBase) => knowledgeBase.id === selectedKnowledgeBaseId
   );
-  const visibleConversations = conversationHistory.filter(
-    (conversation) => conversation.knowledge_base_id === selectedKnowledgeBaseId
-  );
-  const folderConversations = visibleConversations.filter((conversation) => !conversation.document_id);
+  const selectedDocument = documents.find((document) => document.id === selectedDocumentId);
   const examplePrompts = [
     { label: "Prepare a teaching pack", prompt: "Using only the selected document, prepare a practical teacher-ready lesson pack. Include: topic and learning objectives (mark anything the source does not specify as 'Teacher to fill in'), a brief lesson sequence, a clear explanation with examples, one activity requiring few or no special materials, practice at support/standard/challenge levels, a short formative quiz with answer key, and likely misconceptions with follow-up suggestions. Cite source numbers like [1] beside claims. Keep it clear, printable, and easy to adapt. Do not invent curriculum requirements." },
     { label: "Make a teaching summary", prompt: "Create a clear teaching summary of this document: main ideas, learning objectives only where stated, key terms, worked examples, and a short recap. Use plain language and cite source numbers like [1]." },
@@ -683,9 +679,9 @@ export default function App() {
           onClick={() => setIsMobileSidebarOpen(true)}
         >
           <Menu size={19} />
-          <span>{selectedKnowledgeBase?.name ?? "Folders"}</span>
+          <span>{selectedDocument?.original_filename ?? selectedKnowledgeBase?.name ?? "Choose a file"}</span>
         </button>
-        <button className="mobile-new-chat" type="button" onClick={handleNewChat} title="New chat" aria-label="Start a new chat" disabled={isBusy}>
+        <button className="mobile-new-chat" type="button" onClick={handleNewChat} title="New chat" aria-label="Start a new chat" disabled={isBusy || !selectedDocumentId}>
           <Plus size={18} />
         </button>
       </div>
@@ -761,7 +757,7 @@ export default function App() {
                             <button
                               className="document-expand"
                               type="button"
-                              aria-label={`${isDocumentExpanded ? "Collapse" : "Expand"} chats for ${document.original_filename}`}
+                              aria-label={`${isDocumentExpanded ? "Collapse" : "Expand"} chat history for ${document.original_filename}`}
                               aria-expanded={isDocumentExpanded}
                               onClick={() => toggleDocumentHistory(document.id)}
                             >
@@ -773,9 +769,7 @@ export default function App() {
                               type="button"
                               disabled={document.status !== "ready"}
                               aria-pressed={selectedDocumentId === document.id}
-                              onClick={() => selectedDocumentId === document.id
-                                ? handleSelectKnowledgeBase(knowledgeBase.id)
-                                : handleSelectDocument(knowledgeBase.id, document.id)}
+                              onClick={() => handleSelectDocument(knowledgeBase.id, document.id)}
                             >
                               <FileText size={14} />
                               <span>{document.original_filename}</span>
@@ -829,56 +823,6 @@ export default function App() {
           })}
         </nav>
 
-        <div className="history-section">
-          <div className="history-section-heading">
-            <button
-              className="history-toggle"
-              type="button"
-              aria-expanded={isHistoryExpanded}
-              onClick={() => setIsHistoryExpanded((expanded) => !expanded)}
-            >
-              {isHistoryExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-              <span>FOLDER CHATS</span>
-              <small>{folderConversations.length}</small>
-            </button>
-            <button className="history-new-chat" type="button" onClick={handleNewChat} title="New chat" aria-label="Start a new chat" disabled={isBusy}>
-              <Plus size={17} />
-            </button>
-          </div>
-          {isHistoryExpanded && (
-            <div className="history-list" aria-label="Saved conversations">
-              {isHistoryLoading && <small className="history-empty">Loading chats…</small>}
-              {!isHistoryLoading && folderConversations.length === 0 && (
-                <small className="history-empty">Folder-wide and older unlinked chats appear here. File-specific chats are nested under each file.</small>
-              )}
-              {folderConversations.map((conversation) => (
-                <div className={`history-row ${conversationId === conversation.id ? "selected" : ""}`} key={conversation.id}>
-                  <button
-                    className="history-open"
-                    type="button"
-                    title={conversation.title}
-                    disabled={isBusy}
-                    onClick={() => void handleOpenConversation(conversation)}
-                  >
-                    <MessageCircle size={14} />
-                    <span>{conversation.title || "New conversation"}</span>
-                  </button>
-                  <button
-                    className="history-download"
-                    type="button"
-                    title={`Download ${conversation.title}`}
-                    aria-label={`Download conversation: ${conversation.title}`}
-                    disabled={isBusy}
-                    onClick={() => void handleDownloadConversation(conversation)}
-                  >
-                    <Download size={14} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
         <div className="sidebottom">
           <div className="workspace-label"><ShieldCheck size={16} /> Private workspace</div>
           <button onClick={handleLogout}>
@@ -891,14 +835,14 @@ export default function App() {
         <section className="chat">
           <div className="chat-heading">
             <div>
-              <h2>{selectedKnowledgeBase?.name ?? "Your workspace"}</h2>
+              <h2>{selectedDocument?.original_filename ?? selectedKnowledgeBase?.name ?? "Your workspace"}</h2>
               <p>{selectedDocumentId
-                ? `Questions will use ${documents.find((document) => document.id === selectedDocumentId)?.original_filename ?? "the selected file"}. Click it again to search the whole folder.`
-                : "Ask questions about files in this folder."}</p>
+                ? "Questions and saved chats are tied to this file. Expand it in the sidebar to reopen a chat."
+                : "Choose a ready file from the sidebar to start asking questions."}</p>
             </div>
             <div className="chat-actions">
               <span className="pill">{documents.length} file{documents.length === 1 ? "" : "s"}</span>
-              <button className="chat-tool-button" type="button" onClick={handleNewChat} title="New chat" aria-label="Start a new chat" disabled={isBusy}>
+              <button className="chat-tool-button" type="button" onClick={handleNewChat} title="New chat" aria-label="Start a new chat" disabled={isBusy || !selectedDocumentId}>
                 <Plus size={17} />
               </button>
               {conversationId && messages.length > 0 && (
@@ -937,10 +881,10 @@ export default function App() {
               <div className="empty">
                 <BookOpen size={36} />
                 <h2>What would you like to learn?</h2>
-                <p>{documents.some((document) => document.status === "ready")
+                <p>{selectedDocumentId
                   ? "Ask about this file or choose a ready-made task. Your chats stay under the file, and you can print useful answers for class."
-                  : "Add a document, then ask for a teaching pack, learner practice, a summary, or a clear explanation."}</p>
-                {documents.some((document) => document.status === "ready") && (
+                  : "Choose a ready file from the folder sidebar. Each file keeps its own chat history."}</p>
+                {selectedDocumentId && (
                   <div className="prompt-suggestions">
                     {examplePrompts.map((example) => (
                       <button key={example.label} type="button" onClick={() => chooseExamplePrompt(example.prompt)}>
@@ -991,10 +935,10 @@ export default function App() {
               ref={questionInputRef}
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
-              placeholder="Ask for a summary, lesson plan, key ideas, or an answer..."
-              disabled={!selectedKnowledgeBaseId || isBusy}
+              placeholder={selectedDocumentId ? "Ask a question about the selected file…" : "Choose a file to start chatting…"}
+              disabled={!selectedDocumentId || isBusy}
             />
-            <button disabled={!selectedKnowledgeBaseId || isBusy || !question.trim()} aria-label="Send question">
+            <button disabled={!selectedDocumentId || isBusy || !question.trim()} aria-label="Send question">
               <Send size={19} />
             </button>
           </form>

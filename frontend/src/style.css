@@ -422,6 +422,7 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
 .document-chat-list { margin: 1px 0 6px 21px; padding: 3px 0 4px 7px; border-left: 1px solid #c6d7dc; }
 .document-chat-list .history-open { padding-top: 6px; padding-bottom: 6px; font-size: 11px; }
 .document-chat-list .history-empty { font-size: 10px; }
+.document-tree-node:has(.folder-file-row.selected) > .document-chat-list { border-left-color: #327fc1; }
 .chat-tool-button { width: 38px; height: 38px; background: #e4edf1; }
 .chat-tool-button:disabled { opacity: .45; cursor: not-allowed; }
 .empty { width: min(700px, 100%); max-width: 700px; padding: 18px; }
@@ -458,6 +459,12 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
   .chat-actions { gap: 5px; }
   .chat-tool-button { width: 34px; height: 34px; }
   .prompt-suggestions { grid-template-columns: 1fr; }
+  .chat-heading { align-items: flex-start; }
+  .chat-heading > div:first-child { min-width: 0; }
+  .chat-heading h2 { max-width: 48vw; font-size: 16px; }
+  .chat-heading p { max-width: 48vw; font-size: 11px; }
+  .chat-actions { flex-wrap: wrap; justify-content: flex-end; }
+  .upload-trigger { min-height: 34px; padding: 7px 8px; font-size: 11px; }
 }
 
 /* On phones, keep the workspace chrome compact and move folders into a drawer. */
@@ -496,6 +503,13 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
   }
 
   .folder-menu-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chat-heading { align-items: flex-start; }
+  .chat-heading > div:first-child { min-width: 0; }
+  .chat-heading h2 { overflow-wrap: anywhere; }
+  .chat-actions { flex-wrap: nowrap; }
+  .chat-actions .pill { display: none; }
+  .document-chat-list { margin-left: 17px; }
+  .document-chat-list .history-open { min-height: 40px; }
 
   .sidebar-backdrop {
     position: fixed;

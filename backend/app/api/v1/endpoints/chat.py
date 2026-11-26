@@ -94,6 +94,8 @@ def _save_chat(user_id, knowledge_base_id, document_id, conversation_id, questio
 async def chat(data: ChatRequest, user: User=Depends(current_user)):
     started = perf_counter()
     try:
+        if data.document_id is None:
+            raise HTTPException(400, 'Choose a document before starting a chat.')
         stage_started = perf_counter()
         query_vector = (await run_in_threadpool(embed_texts, [data.question]))[0]
         logger.warning('Chat query embedding completed in %.1f seconds.', perf_counter() - stage_started)
