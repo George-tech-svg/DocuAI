@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import os
 from threading import Lock
 from fastapi import APIRouter, BackgroundTasks, Depends, UploadFile, File, HTTPException
+from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
@@ -13,12 +14,18 @@ from app.db.session import get_engine
 from app.api.dependencies import current_user
 from app.models.user import User
 from app.models.document import Document
+from app.models.conversation import Conversation
 from app.schemas.document import DocumentResponse, DocumentListResponse, DocumentUploadResponse, DocumentStatusResponse
 from app.services.document_service import owned_kb, owned_document, process_upload
 from app.services.file_validation import validate_upload
 from app.services.storage import delete_file
 from app.core.config import max_upload_mb
 router = APIRouter(prefix='/knowledge-bases/{kb_id}/documents', tags=['Documents'])
+
+class DocumentUpdate(BaseModel):
+    original_filename: str | None = Field(default=None, min_length=1, max_length=255)
+    is_archived: bool | None = None
+    is_pinned: bool | None = None
 _upload_processing_lock = Lock()
 
 def _fail_stale_processing(db: Session, kb_id: UUID):
@@ -98,7 +105,7 @@ async def upload(kb_id: UUID, background_tasks: BackgroundTasks, file: UploadFil
 def listing(kb_id: UUID, user: User=Depends(current_user), db: Session=Depends(get_db)):
     owned_kb(db, user.id, kb_id)
     _fail_stale_processing(db, kb_id)
-    items = list(db.scalars(select(Document).where(Document.knowledge_base_id == kb_id).order_by(Document.created_at.desc())).all())
+    items = list(db.scalars(select(Document).where(Document.knowledge_base_id == kb_id).order_by(Document.is_pinned.desc(), Document.created_at.desc())).all())
     return DocumentListResponse(items=items, total=len(items))
 
 @router.get('/{doc_id}/status', response_model=DocumentStatusResponse)
@@ -116,5 +123,16 @@ def delete(kb_id: UUID, doc_id: UUID, user: User=Depends(current_user), db: Sess
             delete_file(d.cloudinary_public_id, d.cloudinary_resource_type or 'raw')
         except Exception as exc:
             raise HTTPException(502, 'Could not delete the original file from Cloudinary; document metadata was kept') from exc
+    db.query(Conversation).filter(Conversation.document_id == doc_id).delete(synchronize_session=False)
     db.delete(d)
     db.commit()
+
+@router.patch('/{doc_id}', response_model=DocumentResponse)
+def update(kb_id: UUID, doc_id: UUID, data: DocumentUpdate, user: User=Depends(current_user), db: Session=Depends(get_db)):
+    document = owned_document(db, user.id, kb_id, doc_id)
+    for key, value in data.model_dump(exclude_unset=True).items():
+        if value is not None:
+            setattr(document, key, value)
+    db.commit()
+    db.refresh(document)
+    return document

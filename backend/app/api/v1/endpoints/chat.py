@@ -5,6 +5,7 @@ import logging
 from time import perf_counter
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -21,6 +22,11 @@ from app.services.embeddings import embed_texts
 from app.services.llm import answer_question
 router = APIRouter(tags=['Chat'])
 logger = logging.getLogger(__name__)
+
+class ConversationUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    is_archived: bool | None = None
+    is_pinned: bool | None = None
 
 def _prepare_chat(user_id, data: ChatRequest, query_vector):
     """Run chat authorization and retrieval in one worker-owned DB session."""
@@ -125,7 +131,27 @@ async def chat(data: ChatRequest, user: User=Depends(current_user)):
 
 @router.get('/conversations', response_model=list[ConversationResponse])
 def conversations(user: User=Depends(current_user), db: Session=Depends(get_db)):
-    return list(db.scalars(select(Conversation).where(Conversation.user_id == user.id).order_by(Conversation.created_at.desc())).all())
+    return list(db.scalars(select(Conversation).where(Conversation.user_id == user.id).order_by(Conversation.is_pinned.desc(), Conversation.created_at.desc())).all())
+
+@router.patch('/conversations/{conversation_id}', response_model=ConversationResponse)
+def update_conversation(conversation_id: UUID, data: ConversationUpdate, user: User=Depends(current_user), db: Session=Depends(get_db)):
+    conversation = db.scalar(select(Conversation).where(Conversation.id == conversation_id, Conversation.user_id == user.id))
+    if conversation is None:
+        raise HTTPException(404, 'Conversation not found')
+    for key, value in data.model_dump(exclude_unset=True).items():
+        if value is not None:
+            setattr(conversation, key, value)
+    db.commit()
+    db.refresh(conversation)
+    return conversation
+
+@router.delete('/conversations/{conversation_id}', status_code=204)
+def delete_conversation(conversation_id: UUID, user: User=Depends(current_user), db: Session=Depends(get_db)):
+    conversation = db.scalar(select(Conversation).where(Conversation.id == conversation_id, Conversation.user_id == user.id))
+    if conversation is None:
+        raise HTTPException(404, 'Conversation not found')
+    db.delete(conversation)
+    db.commit()
 
 @router.get('/conversations/{conversation_id}/messages', response_model=list[MessageResponse])
 def messages(conversation_id: UUID, user: User=Depends(current_user), db: Session=Depends(get_db)):

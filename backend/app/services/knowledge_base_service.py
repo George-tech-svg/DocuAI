@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.models.knowledge_base import KnowledgeBase
+from app.models.conversation import Conversation
 from app.schemas.knowledge_base import KnowledgeBaseCreate, KnowledgeBaseUpdate
 from app.services.storage import delete_file
 
@@ -24,7 +25,7 @@ def create_knowledge_base(db: Session, user_id: UUID, data: KnowledgeBaseCreate)
     return kb
 
 def list_knowledge_bases(db: Session, user_id: UUID):
-    return list(db.scalars(select(KnowledgeBase).where(KnowledgeBase.user_id == user_id).order_by(KnowledgeBase.created_at.desc())).all())
+    return list(db.scalars(select(KnowledgeBase).where(KnowledgeBase.user_id == user_id).order_by(KnowledgeBase.is_pinned.desc(), KnowledgeBase.created_at.desc())).all())
 
 def update_knowledge_base(db: Session, user_id: UUID, knowledge_base_id: UUID, data: KnowledgeBaseUpdate):
     kb = get_knowledge_base(db, user_id, knowledge_base_id)
@@ -44,5 +45,7 @@ def delete_knowledge_base(db: Session, user_id: UUID, knowledge_base_id: UUID):
                 delete_file(document.cloudinary_public_id, document.cloudinary_resource_type or 'raw')
             except Exception as exc:
                 raise RuntimeError('Could not delete all original files from Cloudinary') from exc
+    for conversation in list(kb.conversations):
+        db.delete(conversation)
     db.delete(kb)
     db.commit()

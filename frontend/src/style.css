@@ -423,6 +423,13 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
 .document-chat-list .history-open { padding-top: 6px; padding-bottom: 6px; font-size: 11px; }
 .document-chat-list .history-empty { font-size: 10px; }
 .document-tree-node:has(.folder-file-row.selected) > .document-chat-list { border-left-color: #327fc1; }
+.item-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 1px; opacity: .75; }
+.item-actions button { display: grid; width: 25px; height: 28px; place-items: center; padding: 0; border: 0; border-radius: 5px; background: transparent; color: #587386; }
+.item-actions button:hover, .history-download:hover { background: #dce8ec; color: #205f86; }
+.folder-tree-row .folder-select { flex: 1; }
+.document-tree-row .folder-file-row { flex: 1; }
+.history-row.archived { opacity: .68; }
+.history-row.archived .history-open::after { content: "archived"; flex: 0 0 auto; color: #788b94; font-size: 9px; }
 .chat-tool-button { width: 38px; height: 38px; background: #e4edf1; }
 .chat-tool-button:disabled { opacity: .45; cursor: not-allowed; }
 .empty { width: min(700px, 100%); max-width: 700px; padding: 18px; }
@@ -449,7 +456,6 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
 @keyframes help-slide-in { from { transform: translateX(24px); opacity: .6; } to { transform: translateX(0); opacity: 1; } }
 
 @media (max-width: 700px) {
-  .mobile-new-chat { display: grid; flex: 0 0 38px; width: 38px; height: 38px; place-items: center; border: 1px solid #bfd0dc; border-radius: 9px; background: #f1f4f1; color: #315f7d; }
   .folder-menu-trigger { flex: 1; max-width: none; }
   .shell > aside .folder-tree { flex: 1 1 auto; min-height: 80px; }
   .shell > aside .history-section { flex: 0 1 34%; min-height: 110px; max-height: 230px; }
@@ -475,7 +481,7 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
     display: flex;
     flex: 0 0 auto;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 12px;
     min-height: 54px;
     padding: max(6px, env(safe-area-inset-top)) 14px 6px;
@@ -491,7 +497,7 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
     align-items: center;
     gap: 7px;
     min-width: 0;
-    max-width: 48%;
+    max-width: 100%;
     min-height: 38px;
     padding: 7px 10px;
     border: 1px solid #bfd0dc;
@@ -503,6 +509,9 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
   }
 
   .folder-menu-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chat-actions button[aria-label="Start a new chat"] { display: none; }
+  .item-actions { opacity: 1; }
+  .item-actions button { width: 30px; min-height: 36px; }
   .chat-heading { align-items: flex-start; }
   .chat-heading > div:first-child { min-width: 0; }
   .chat-heading h2 { overflow-wrap: anywhere; }

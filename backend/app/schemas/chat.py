@@ -28,6 +28,8 @@ class ConversationResponse(BaseModel):
     knowledge_base_id: UUID | None
     document_id: UUID | None = None
     created_at: datetime
+    is_archived: bool = False
+    is_pinned: bool = False
 
 class MessageResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)

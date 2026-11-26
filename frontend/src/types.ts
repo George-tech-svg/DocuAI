@@ -3,6 +3,8 @@ export interface KnowledgeBase {
   id: string;
   name: string;
   description: string | null;
+  is_archived: boolean;
+  is_pinned: boolean;
 }
 
 /** Metadata returned by the document upload and listing endpoints. */
@@ -15,6 +17,8 @@ export interface DocumentRecord {
   status: string;
   chunk_count: number;
   processing_error: string | null;
+  is_archived: boolean;
+  is_pinned: boolean;
 }
 
 /** One source passage supporting an AI answer. */
@@ -38,6 +42,8 @@ export interface ConversationRecord {
   knowledge_base_id: string | null;
   document_id: string | null;
   created_at: string;
+  is_archived: boolean;
+  is_pinned: boolean;
 }
 
 export interface SavedChatMessage extends ChatMessage {

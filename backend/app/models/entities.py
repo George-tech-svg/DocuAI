@@ -37,6 +37,8 @@ class KnowledgeBase(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     user = relationship('User', back_populates='knowledge_bases')
     documents = relationship('Document', back_populates='knowledge_base', cascade='all, delete-orphan')
     conversations = relationship('Conversation', back_populates='knowledge_base')
@@ -58,6 +60,8 @@ class Document(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     knowledge_base = relationship('KnowledgeBase', back_populates='documents')
     chunks = relationship('DocumentChunk', back_populates='document', cascade='all, delete-orphan')
 
@@ -86,6 +90,7 @@ class Conversation(Base):
     # Keep compatibility with existing Neon databases that still require this
     # legacy column, while allowing new schemas to create it with a DB default.
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     user = relationship('User', back_populates='conversations')
     knowledge_base = relationship('KnowledgeBase', back_populates='conversations')
     messages = relationship('Message', back_populates='conversation', cascade='all, delete-orphan')

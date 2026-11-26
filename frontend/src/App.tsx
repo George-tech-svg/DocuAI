@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import {
   BookOpen,
+  Archive,
   ChevronDown,
   ChevronRight,
   Download,
@@ -9,6 +10,8 @@ import {
   FileText,
   LogOut,
   Menu,
+  Pencil,
+  Pin,
   MessageCircle,
   Plus,
   Printer,
@@ -510,21 +513,61 @@ export default function App() {
   }
 
   /** Delete one document after the user confirms the action. */
-  async function handleDeleteDocument(documentId: string) {
-    if (!window.confirm("Delete this document?")) return;
+  async function handleDeleteDocument(knowledgeBaseId: string, documentId: string) {
+    if (!window.confirm("Delete this file and its saved chats? This cannot be undone.")) return;
 
     try {
       await request<void>(
-        `/knowledge-bases/${selectedKnowledgeBaseId}/documents/${documentId}`,
+        `/knowledge-bases/${knowledgeBaseId}/documents/${documentId}`,
         token,
         { method: "DELETE" }
       );
-      if (selectedDocumentId === documentId) setSelectedDocumentId("");
+      if (selectedDocumentId === documentId) { setSelectedDocumentId(""); setConversationId(null); setMessages([]); }
       await refreshDocuments();
       await refreshConversationHistory();
+      const refreshed = await request<DocumentListResponse>(`/knowledge-bases/${knowledgeBaseId}/documents`, token);
+      setFolderDocuments((previous) => ({ ...previous, [knowledgeBaseId]: { items: refreshed.items, loading: false, error: "" } }));
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
+  }
+
+  async function updateItem(path: string, data: Record<string, string | boolean>) {
+    try {
+      await request(path, token, { method: "PATCH", body: JSON.stringify(data) });
+      await Promise.all([refreshKnowledgeBases(), refreshDocuments(), refreshConversationHistory()]);
+      await Promise.all(Array.from(expandedKnowledgeBaseIds).map(async (knowledgeBaseId) => {
+        const refreshed = await request<DocumentListResponse>(`/knowledge-bases/${knowledgeBaseId}/documents`, token);
+        setFolderDocuments((previous) => ({ ...previous, [knowledgeBaseId]: { items: refreshed.items, loading: false, error: "" } }));
+      }));
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  }
+
+  async function handleDeleteConversation(conversation: ConversationRecord) {
+    if (!window.confirm(`Delete chat “${conversation.title}”? This cannot be undone.`)) return;
+    try {
+      await request<void>(`/conversations/${conversation.id}`, token, { method: "DELETE" });
+      if (conversationId === conversation.id) { setConversationId(null); setMessages([]); }
+      await refreshConversationHistory();
+    } catch (error) { setErrorMessage(getErrorMessage(error)); }
+  }
+
+  async function handleDeleteKnowledgeBase(knowledgeBase: KnowledgeBase) {
+    if (!window.confirm(`Delete folder “${knowledgeBase.name}” and all its files and chats? This cannot be undone.`)) return;
+    try {
+      await request<void>(`/knowledge-bases/${knowledgeBase.id}`, token, { method: "DELETE" });
+      if (selectedKnowledgeBaseId === knowledgeBase.id) {
+        setSelectedKnowledgeBaseId(""); setSelectedDocumentId(""); setConversationId(null); setMessages([]);
+      }
+      await Promise.all([refreshKnowledgeBases(), refreshConversationHistory()]);
+    } catch (error) { setErrorMessage(getErrorMessage(error)); }
+  }
+
+  function promptRename(label: string, currentName: string, save: (name: string) => void) {
+    const value = window.prompt(`Rename ${label}`, currentName);
+    if (value?.trim() && value.trim() !== currentName) save(value.trim());
   }
 
   /** Send a question and display the AI answer with its document sources. */
@@ -668,9 +711,6 @@ export default function App() {
   return (
     <div className="shell">
       <div className="mobile-topbar">
-        <div className="brand">
-          <BookOpen /> DocuMind <span>AI</span>
-        </div>
         <button
           className="folder-menu-trigger"
           type="button"
@@ -680,9 +720,6 @@ export default function App() {
         >
           <Menu size={19} />
           <span>{selectedDocument?.original_filename ?? selectedKnowledgeBase?.name ?? "Choose a file"}</span>
-        </button>
-        <button className="mobile-new-chat" type="button" onClick={handleNewChat} title="New chat" aria-label="Start a new chat" disabled={isBusy || !selectedDocumentId}>
-          <Plus size={18} />
         </button>
       </div>
 
@@ -742,7 +779,15 @@ export default function App() {
                   >
                     <BookOpen size={16} />
                     <span>{knowledgeBase.name}</span>
+                    {knowledgeBase.is_archived && <small>Archived</small>}
+                    {knowledgeBase.is_pinned && <Pin size={13} aria-label="Pinned" />}
                   </button>
+                  <div className="item-actions">
+                    <button type="button" title={knowledgeBase.is_pinned ? "Unpin folder" : "Pin folder"} aria-label={knowledgeBase.is_pinned ? "Unpin folder" : "Pin folder"} onClick={() => void updateItem(`/knowledge-bases/${knowledgeBase.id}`, { is_pinned: !knowledgeBase.is_pinned })}><Pin size={13} /></button>
+                    <button type="button" title="Rename folder" aria-label="Rename folder" onClick={() => promptRename("folder", knowledgeBase.name, (name) => void updateItem(`/knowledge-bases/${knowledgeBase.id}`, { name }))}><Pencil size={13} /></button>
+                    <button type="button" title={knowledgeBase.is_archived ? "Restore folder" : "Archive folder"} aria-label={knowledgeBase.is_archived ? "Restore folder" : "Archive folder"} onClick={() => void updateItem(`/knowledge-bases/${knowledgeBase.id}`, { is_archived: !knowledgeBase.is_archived })}><Archive size={13} /></button>
+                    <button type="button" title="Delete folder" aria-label="Delete folder" onClick={() => void handleDeleteKnowledgeBase(knowledgeBase)}><Trash2 size={13} /></button>
+                  </div>
                 </div>
                 {isExpanded && (
                   <div className="folder-file-tree" aria-label={`Files in ${knowledgeBase.name}`}>
@@ -773,10 +818,18 @@ export default function App() {
                             >
                               <FileText size={14} />
                               <span>{document.original_filename}</span>
+                              {document.is_archived && <small>archived</small>}
+                              {document.is_pinned && <Pin size={12} aria-label="Pinned" />}
                               {document.status !== "ready" && (
                                 <small>{document.status === "pending" ? "waiting" : document.status}</small>
                               )}
                             </button>
+                            <div className="item-actions file-actions">
+                              <button type="button" title={document.is_pinned ? "Unpin file" : "Pin file"} aria-label={document.is_pinned ? "Unpin file" : "Pin file"} onClick={() => void updateItem(`/knowledge-bases/${knowledgeBase.id}/documents/${document.id}`, { is_pinned: !document.is_pinned })}><Pin size={12} /></button>
+                              <button type="button" title="Rename file" aria-label="Rename file" onClick={() => promptRename("file", document.original_filename, (original_filename) => void updateItem(`/knowledge-bases/${knowledgeBase.id}/documents/${document.id}`, { original_filename }))}><Pencil size={12} /></button>
+                              <button type="button" title={document.is_archived ? "Restore file" : "Archive file"} aria-label={document.is_archived ? "Restore file" : "Archive file"} onClick={() => void updateItem(`/knowledge-bases/${knowledgeBase.id}/documents/${document.id}`, { is_archived: !document.is_archived })}><Archive size={12} /></button>
+                              <button type="button" title="Delete file" aria-label="Delete file" onClick={() => void handleDeleteDocument(knowledgeBase.id, document.id)}><Trash2 size={12} /></button>
+                            </div>
                           </div>
                           {isDocumentExpanded && (
                             <div className="document-chat-list" aria-label={`Chats about ${document.original_filename}`}>
@@ -785,7 +838,7 @@ export default function App() {
                                 <small className="history-empty">No chats for this document yet.</small>
                               )}
                               {documentChats.map((conversation) => (
-                                <div className={`history-row ${conversationId === conversation.id ? "selected" : ""}`} key={conversation.id}>
+                                <div className={`history-row ${conversationId === conversation.id ? "selected" : ""} ${conversation.is_archived ? "archived" : ""}`} key={conversation.id}>
                                   <button
                                     className="history-open"
                                     type="button"
@@ -795,7 +848,12 @@ export default function App() {
                                   >
                                     <MessageCircle size={13} />
                                     <span>{conversation.title || "New conversation"}</span>
+                                    {conversation.is_pinned && <Pin size={12} aria-label="Pinned" />}
                                   </button>
+                                  <button className="history-download" type="button" title={conversation.is_pinned ? "Unpin chat" : "Pin chat"} aria-label={conversation.is_pinned ? "Unpin chat" : "Pin chat"} onClick={() => void updateItem(`/conversations/${conversation.id}`, { is_pinned: !conversation.is_pinned })}><Pin size={12} /></button>
+                                  <button className="history-download" type="button" title="Rename chat" aria-label="Rename chat" onClick={() => promptRename("chat", conversation.title, (title) => void updateItem(`/conversations/${conversation.id}`, { title }))}><Pencil size={12} /></button>
+                                  <button className="history-download" type="button" title={conversation.is_archived ? "Restore chat" : "Archive chat"} aria-label={conversation.is_archived ? "Restore chat" : "Archive chat"} onClick={() => void updateItem(`/conversations/${conversation.id}`, { is_archived: !conversation.is_archived })}><Archive size={12} /></button>
+                                  <button className="history-download" type="button" title="Delete chat" aria-label="Delete chat" onClick={() => void handleDeleteConversation(conversation)}><Trash2 size={12} /></button>
                                   <button
                                     className="history-download"
                                     type="button"

@@ -18,6 +18,8 @@ class DocumentResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     processed_at: datetime | None
+    is_archived: bool = False
+    is_pinned: bool = False
 
 class DocumentListResponse(BaseModel):
     items: list[DocumentResponse]
