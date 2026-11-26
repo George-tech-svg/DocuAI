@@ -2,8 +2,10 @@
 
 from uuid import UUID
 from datetime import datetime, timedelta, timezone
+import os
 from threading import Lock
 from fastapi import APIRouter, BackgroundTasks, Depends, UploadFile, File, HTTPException
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 from app.db.session import get_db
@@ -67,7 +69,27 @@ async def upload(kb_id: UUID, background_tasks: BackgroundTasks, file: UploadFil
     db.add(doc)
     db.commit()
     db.refresh(doc)
-    # Return the accepted document before extraction/model inference begins.
+    # Serverless instances can be frozen or recycled after the HTTP response,
+    # so Vercel must complete indexing within the request instead of relying
+    # on an in-process background task. Keep the task-based path for persistent
+    # hosts such as Render, where the process stays alive after the response.
+    if os.getenv('VERCEL'):
+        processed_doc = await run_in_threadpool(
+            _process_upload_in_worker, user.id, kb_id, doc.id, name, data
+        )
+        if processed_doc is None:
+            raise HTTPException(500, 'Document processing could not be started')
+        message = (
+            'Document processed'
+            if processed_doc.status == 'ready'
+            else processed_doc.processing_error or 'Document processing failed'
+        )
+        return DocumentUploadResponse(
+            document=DocumentResponse.model_validate(processed_doc),
+            message=message,
+        )
+
+    # Persistent hosts return once accepted and continue indexing in-process.
     # The worker opens its own DB session; the request session is never shared.
     background_tasks.add_task(_process_upload_in_worker, user.id, kb_id, doc.id, name, data)
     return DocumentUploadResponse(document=DocumentResponse.model_validate(doc), message='Upload accepted; processing in background.')
