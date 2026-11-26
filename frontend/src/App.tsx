@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import { getErrorMessage, request } from "./api";
+import AssistantMessage from "./AssistantMessage";
 import type {
   AuthenticationResponse,
   ChatMessage,
@@ -617,7 +618,9 @@ export default function App() {
             )}
             {messages.map((message, index) => (
               <div key={index} className={`bubble ${message.role}`}>
-                <div>{message.content}</div>
+                {message.role === "assistant"
+                  ? <AssistantMessage content={message.content} />
+                  : <div>{message.content}</div>}
                 {message.sources && message.sources.length > 0 && (
                   <div className="sources">
                     <strong>Sources</strong>

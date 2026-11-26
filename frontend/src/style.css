@@ -169,6 +169,16 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
 .bubble { max-width: 85%; padding: 15px 17px; border-radius: 14px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
 .bubble.user { align-self: flex-end; background: #16845b; color: #f6f7f0; border-bottom-right-radius: 4px; }
 .bubble.assistant { align-self: flex-start; background: #e5ebe2; color: #293f33; border-bottom-left-radius: 4px; }
+.bubble.assistant { white-space: normal; }
+.assistant-content { line-height: 1.65; }
+.assistant-content p { margin: 0 0 10px; }
+.assistant-content p:last-child, .assistant-content ul:last-child, .assistant-content ol:last-child { margin-bottom: 0; }
+.assistant-content h4 { margin: 14px 0 6px; font-size: 14px; line-height: 1.4; }
+.assistant-content h4:first-child { margin-top: 0; }
+.assistant-content ul, .assistant-content ol { margin: 5px 0 12px; padding-left: 22px; }
+.assistant-content li { padding-left: 2px; margin: 3px 0; }
+.assistant-content strong { font-weight: 700; }
+.assistant-content code { padding: 1px 4px; border-radius: 4px; background: #d8e1d5; font-size: .92em; }
 .sources { border-top: 1px solid #cbd9cc; margin-top: 12px; padding-top: 8px; font-size: 11px; color: #52695c; }
 .sources strong { display: block; margin-bottom: 7px; }
 .source { border-left: 2px solid #8eb89a; padding: 4px 0 4px 9px; margin: 7px 0; }
