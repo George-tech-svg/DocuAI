@@ -3,12 +3,21 @@
 import logging
 import os
 from pathlib import Path
+import tempfile
 from threading import Lock
 from time import perf_counter
 
 logger = logging.getLogger(__name__)
 MODEL_ID = 'sentence-transformers/all-MiniLM-L6-v2'
-MODEL_CACHE_DIR = Path(__file__).resolve().parents[2] / '.model-cache'
+_LOCAL_MODEL_CACHE_DIR = Path(__file__).resolve().parents[2] / '.model-cache'
+# Vercel's deployed function bundle is read-only. Cache downloaded ONNX model
+# files in its writable temporary directory; keep the existing local/Render
+# cache path for environments that can persist build artifacts.
+MODEL_CACHE_DIR = (
+    Path(tempfile.gettempdir()) / 'documind-fastembed-cache'
+    if os.getenv('VERCEL')
+    else _LOCAL_MODEL_CACHE_DIR
+)
 _model_instance = None
 _model_lock = Lock()
 _encode_lock = Lock()
@@ -28,14 +37,13 @@ def model():
             started = perf_counter()
             logger.warning('Loading the sentence embedding model.')
             os.environ.setdefault('TOKENIZERS_PARALLELISM', 'false')
-            import torch
-            from sentence_transformers import SentenceTransformer
+            from fastembed import TextEmbedding
 
-            torch.set_num_threads(1)
-            _model_instance = SentenceTransformer(
-                MODEL_ID,
-                device='cpu',
-                cache_folder=str(MODEL_CACHE_DIR),
+            MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            _model_instance = TextEmbedding(
+                model_name=MODEL_ID,
+                cache_dir=str(MODEL_CACHE_DIR),
+                threads=1,
             )
             logger.warning('Sentence embedding model loaded in %.1f seconds.', perf_counter() - started)
     return _model_instance
@@ -50,13 +58,10 @@ def iter_embedding_batches(texts: list[str], batch_size: int = 8):
         # Serialize inference. Multiple uploads or chats must not each allocate
         # a separate set of model activations at the same time on a small host.
         with _encode_lock:
-            vectors = model().encode(
+            vectors = list(model().embed(
                 batch,
                 batch_size=batch_size,
-                normalize_embeddings=True,
-                convert_to_numpy=True,
-                show_progress_bar=False,
-            )
+            ))
         elapsed = perf_counter() - started
         if elapsed >= 3:
             logger.warning('Encoded %s text(s) in %.1f seconds.', len(batch), elapsed)

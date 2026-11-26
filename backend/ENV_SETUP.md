@@ -22,16 +22,12 @@ The Vite frontend reads `VITE_API_BASE_URL` at build time. For this repository's
 
 Set all service variables in the backend hosting provider as well as the appropriate Vercel variables. Local `.env` files do not configure deployed services.
 
-For the Vercel Services deployment, add these project environment variables in
-Vercel and redeploy after saving them:
-
-- `VERCEL_SUPPORT_LARGE_FUNCTIONS=1` enables the Large Functions beta needed by
-  the backend's approximately 1.18 GB Python bundle. The project must use Fluid
-  Compute with Active CPU enabled.
-- `VERCEL_SUPPORT_LARGE_REQUEST_BODY=1` enables request bodies up to 20 MiB.
-  Set the backend service's Function Memory to **Performance (4 GB)** as
-  required by this beta. The app's 20 MB file cap leaves room for multipart
-  request overhead under the 20 MiB platform cap.
+The backend uses FastEmbed's ONNX runtime rather than PyTorch so its function
+bundle stays below Vercel's standard Python size limit. The app accepts files
+up to 20 MB, but Vercel's standard request body limit is 4.5 MB. The 20 MiB
+request-body beta needs `VERCEL_SUPPORT_LARGE_REQUEST_BODY=1` and Performance
+(4 GB) function memory. Hobby projects cannot select 4 GB; on Hobby, use
+direct-to-Cloudinary uploads or keep uploads below Vercel's request body limit.
 
 Add the application variables listed above to the backend service environment
 in Vercel. For this shared-domain deployment, leave `VITE_API_BASE_URL` unset;
@@ -47,7 +43,7 @@ directory:
 - Root Directory at the repository root:
   `pip install -r backend/requirements.txt && python backend/scripts/preload_embedding_model.py`
 
-This downloads the MiniLM embedding model while building the release, so a
+This downloads the MiniLM ONNX embedding model while building the release, so a
 user's first upload or chat request does not need to fetch model files from
 Hugging Face. The cache is kept in the build artifact and is excluded from Git.
 If model preloading fails during the build, inspect that build error; the live

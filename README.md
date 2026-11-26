@@ -54,7 +54,7 @@ Frontend: http://localhost:3000
 1. User logs in and creates a knowledge base.
 2. User uploads a PDF, DOCX, or TXT file (up to 20 MB; indexing continues in the background).
 3. Backend extracts text and splits it into chunks.
-4. MiniLM generates 384-dimensional embeddings; PostgreSQL pgvector stores them.
+4. FastEmbed runs the MiniLM ONNX model to generate 384-dimensional embeddings; PostgreSQL pgvector stores them.
 5. A question is embedded and similar chunks are retrieved.
 6. DeepSeek receives retrieved excerpts and produces an answer with sources.
 
@@ -65,6 +65,6 @@ Frontend: http://localhost:3000
 - PDF extraction handles text PDFs; scanned PDFs require OCR, which is not included.
 - Upload requests return once the file is accepted. Indexing runs in a serialized in-process background task; use a durable job queue and separate worker for restart-safe production processing.
 - Original files are stored in Cloudinary, while document metadata, extracted text, embeddings, accounts, and conversations are stored in Neon. Uploads fail if Cloudinary storage is not configured. Deleting a document or knowledge base also removes the associated Cloudinary originals.
-- In Vercel, set the project framework to **Services** and configure the backend variables listed in `backend/ENV_SETUP.md`. Enable Vercel Large Functions with `VERCEL_SUPPORT_LARGE_FUNCTIONS=1` for the 1.18 GB Python bundle, with Fluid Compute and Active CPU enabled.
-- The app accepts files up to 20 MB. Vercel's 20 MiB request body beta requires `VERCEL_SUPPORT_LARGE_REQUEST_BODY=1` and 4 GB Performance memory on the backend service. A 20 MB file plus multipart overhead fits under 20 MiB. Redeploy after changing environment variables. The frontend uses same-origin `/api/v1`; set `VITE_API_BASE_URL` only if the backend is deployed as a separate project.
+- In Vercel, set the project framework to **Services** and configure the backend variables listed in `backend/ENV_SETUP.md`. FastEmbed's ONNX runtime replaces PyTorch to keep the backend function bundle under the standard size limit.
+- The app accepts files up to 20 MB. Vercel's 20 MiB request body beta requires `VERCEL_SUPPORT_LARGE_REQUEST_BODY=1` and 4 GB Performance memory on the backend service, which Hobby projects cannot select. On Hobby, use direct-to-Cloudinary uploads or keep the request body under Vercel's standard 4.5 MB limit. The frontend uses same-origin `/api/v1`; set `VITE_API_BASE_URL` only if the backend is deployed as a separate project.
 - Review the schema and ownership/deletion behavior before migrating an existing database.
