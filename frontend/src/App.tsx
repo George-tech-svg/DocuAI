@@ -11,6 +11,7 @@ import {
   Menu,
   MessageCircle,
   Plus,
+  Printer,
   Send,
   ShieldCheck,
   Trash2,
@@ -347,6 +348,34 @@ export default function App() {
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  /** Open one answer in a clean print view; the browser can save it as PDF. */
+  function printAssistantAnswer(message: ChatMessage, title: string) {
+    const printWindow = window.open("", "_blank", "width=900,height=700");
+    if (!printWindow) {
+      setErrorMessage("Your browser blocked the print window. Allow pop-ups for this site, then try again.");
+      return;
+    }
+    printWindow.opener = null;
+    const entities: Record<string, string> = {
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;",
+    };
+    const escapeHtml = (value: string) => value.replace(/[&<>\"']/g, (character) => entities[character]);
+    const sources = message.sources?.length
+      ? `<section><h2>Sources</h2><ul>${message.sources.map((source, index) => {
+          const page = source.page_number == null ? "" : `, page ${source.page_number}`;
+          return `<li><strong>[${index + 1}] ${escapeHtml(source.filename + page)}</strong><br>${escapeHtml(source.excerpt)}</li>`;
+        }).join("")}</ul></section>`
+      : "";
+    printWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>
+      body{font:16px/1.65 Arial,sans-serif;color:#20382e;max-width:780px;margin:48px auto;padding:0 24px}
+      h1{font-size:24px;margin-bottom:8px} .meta{color:#65776a;font-size:13px;margin-bottom:28px}
+      article{white-space:pre-wrap;overflow-wrap:anywhere} h2{font-size:18px;margin-top:28px}
+      li{margin:10px 0} @media print{body{margin:0 auto;padding:0 10mm}}
+      </style></head><body><h1>${escapeHtml(title)}</h1><p class="meta">Prepared with DocuMind AI · Review against the cited source before teaching or sharing.</p><article>${escapeHtml(message.content)}</article>${sources}</body></html>`);
+    printWindow.document.close();
+    printWindow.setTimeout(() => printWindow.print(), 250);
+  }
+
   /** Download a history item without first navigating into it. */
   async function handleDownloadConversation(conversation: ConversationRecord) {
     try {
@@ -632,10 +661,11 @@ export default function App() {
   );
   const folderConversations = visibleConversations.filter((conversation) => !conversation.document_id);
   const examplePrompts = [
-    { label: "Make a teaching summary", prompt: "Create a clear, well-organized teaching summary of this document. Include the main ideas, learning objectives, key terms, and a short conclusion." },
-    { label: "Build a lesson plan", prompt: "Turn this document into a practical lesson plan with learning objectives, a suggested teaching sequence, activities, and assessment questions." },
-    { label: "Create a quick quiz", prompt: "Create 8 questions from this document: a mix of multiple-choice and short-answer questions, followed by an answer key." },
-    { label: "Explain the key ideas", prompt: "Explain the most important ideas in this document in simple language, using examples from the document where helpful." },
+    { label: "Prepare a teaching pack", prompt: "Using only the selected document, prepare a practical teacher-ready lesson pack. Include: topic and learning objectives (mark anything the source does not specify as 'Teacher to fill in'), a brief lesson sequence, a clear explanation with examples, one activity requiring few or no special materials, practice at support/standard/challenge levels, a short formative quiz with answer key, and likely misconceptions with follow-up suggestions. Cite source numbers like [1] beside claims. Keep it clear, printable, and easy to adapt. Do not invent curriculum requirements." },
+    { label: "Make a teaching summary", prompt: "Create a clear teaching summary of this document: main ideas, learning objectives only where stated, key terms, worked examples, and a short recap. Use plain language and cite source numbers like [1]." },
+    { label: "Create learner practice", prompt: "Create a short practice sheet from this document with questions at three difficulty levels, then provide a separate answer key with source citations. Do not introduce facts outside the document." },
+    { label: "Create a quick quiz", prompt: "Create 8 questions from this document: a mix of multiple-choice and short-answer questions, followed by a cited answer key. Keep the questions suitable for classroom formative assessment." },
+    { label: "Explain the key ideas", prompt: "Explain the most important ideas in this document in simple language, using examples from the document where helpful. Cite the supporting source numbers like [1]." },
   ];
 
   // After login, show the sidebar, document list, and chat panel.
@@ -908,8 +938,8 @@ export default function App() {
                 <BookOpen size={36} />
                 <h2>What would you like to learn?</h2>
                 <p>{documents.some((document) => document.status === "ready")
-                  ? "Ask a question or choose an example to get started. Every answer is saved in your chat history."
-                  : "Add a document, then ask for a summary, lesson plan, key ideas, or answers to specific questions."}</p>
+                  ? "Ask about this file or choose a ready-made task. Your chats stay under the file, and you can print useful answers for class."
+                  : "Add a document, then ask for a teaching pack, learner practice, a summary, or a clear explanation."}</p>
                 {documents.some((document) => document.status === "ready") && (
                   <div className="prompt-suggestions">
                     {examplePrompts.map((example) => (
@@ -926,13 +956,24 @@ export default function App() {
                 {message.role === "assistant"
                   ? <AssistantMessage content={message.content} />
                   : <div>{message.content}</div>}
+                {message.role === "assistant" && (
+                  <button
+                    className="answer-print"
+                    type="button"
+                    title="Print or save this answer as PDF"
+                    onClick={() => printAssistantAnswer(
+                      message,
+                      conversationHistory.find((item) => item.id === conversationId)?.title ?? "DocuMind teaching notes",
+                    )}
+                  ><Printer size={14} /> Print / save PDF</button>
+                )}
                 {message.sources && message.sources.length > 0 && (
                   <div className="sources">
                     <strong>Sources</strong>
                     {message.sources.map((source, sourceIndex) => (
                       <div className="source" key={`${source.document_id}-${sourceIndex}`}>
                         <span className="source-title">
-                          {source.filename}{source.page_number != null ? ` · page ${source.page_number}` : ""}
+                          [{sourceIndex + 1}] {source.filename}{source.page_number != null ? ` · page ${source.page_number}` : ""}
                         </span>
                         <p>{source.excerpt}</p>
                       </div>

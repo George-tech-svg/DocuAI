@@ -2,6 +2,8 @@
 
 DocuMind AI lets users register, create private knowledge bases, upload documents, and ask AI questions about them.
 
+See [PRODUCT_VISION_KENYA.md](PRODUCT_VISION_KENYA.md) for the education-first product direction, validation plan, safeguards, and future improvements.
+
 ## Project layout
 
 - `backend/app/api/` — FastAPI routes and login protection.

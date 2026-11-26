@@ -170,6 +170,8 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
 .bubble.user { align-self: flex-end; background: #16845b; color: #f6f7f0; border-bottom-right-radius: 4px; }
 .bubble.assistant { align-self: flex-start; background: #e5ebe2; color: #293f33; border-bottom-left-radius: 4px; }
 .bubble.assistant { white-space: normal; }
+.answer-print { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; padding: 7px 10px; border: 1px solid #c7d7ca; border-radius: 8px; background: #f6f8f3; color: #456653; font-size: 12px; }
+.answer-print:hover { border-color: #9bb9a0; background: #edf4eb; }
 .assistant-content { line-height: 1.65; }
 .assistant-content p { margin: 0 0 10px; }
 .assistant-content p:last-child, .assistant-content ul:last-child, .assistant-content ol:last-child { margin-bottom: 0; }
