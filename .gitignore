@@ -1,9 +1,10 @@
 .env
 **/.env
 backend/.env.render
+/.env.vercel
 frontend/.env.vercel
 **/.venv*/
-backend/.model-cache/
+**/model-cache/
 **/venv/
 **/node_modules/
 **/dist/

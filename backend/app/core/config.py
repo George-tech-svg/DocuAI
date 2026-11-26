@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: str = ''
     DEEPSEEK_MODEL: str = 'deepseek-flash'
     FRONTEND_ORIGIN: str = Field(
-        default='https://docu-ai-sage.vercel.app',
+        default='https://docuai-jet.vercel.app',
         validation_alias=AliasChoices('FRONTEND_ORIGIN', 'FRONTEND_URL'),
     )
     FRONTEND_ORIGINS: str = ''
