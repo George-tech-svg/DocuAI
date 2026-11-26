@@ -128,7 +128,7 @@ def delete(kb_id: UUID, doc_id: UUID, user: User=Depends(current_user), db: Sess
     db.commit()
 
 @router.patch('/{doc_id}', response_model=DocumentResponse)
-def update(kb_id: UUID, doc_id: UUID, data: DocumentUpdate, user: User=Depends(current_user), db: Session=Depends(get_db)):
+def update_document(kb_id: UUID, doc_id: UUID, data: DocumentUpdate, user: User=Depends(current_user), db: Session=Depends(get_db)):
     document = owned_document(db, user.id, kb_id, doc_id)
     for key, value in data.model_dump(exclude_unset=True).items():
         if value is not None:
