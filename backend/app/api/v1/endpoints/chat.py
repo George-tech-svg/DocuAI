@@ -58,7 +58,12 @@ def _save_chat(user_id, knowledge_base_id, conversation_id, question, answer, so
             if conversation is None:
                 raise HTTPException(404, 'Conversation not found')
         else:
-            conversation = Conversation(user_id=user_id, knowledge_base_id=knowledge_base_id, title=question[:100])
+            conversation = Conversation(
+                user_id=user_id,
+                knowledge_base_id=knowledge_base_id,
+                title=question[:100],
+                is_archived=False,
+            )
             db.add(conversation)
             db.flush()
         db.add(Message(conversation_id=conversation.id, role='user', content=question))

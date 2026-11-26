@@ -50,18 +50,19 @@ def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes, docu
         if doc is None or doc.knowledge_base_id != kb_id:
             return None
     overall_started = perf_counter()
-    doc.status = 'processing'
-    db.commit()
-    logger.info('Document %s processing started (%s bytes).', doc.id, len(data))
+    processing_document_id = doc.id
     # Uploads may fail during extraction or embedding, before Cloudinary has
     # returned anything. Keep this initialized so the failure handler itself
     # cannot raise UnboundLocalError and strand the document as pending.
     stored = None
     try:
+        doc.status = 'processing'
+        db.commit()
+        logger.info('Document %s processing started (%s bytes).', processing_document_id, len(data))
         stage_started = perf_counter()
-        logger.info('Document %s: extracting text.', doc.id)
+        logger.info('Document %s: extracting text.', processing_document_id)
         pages = extract_pages(name, data)
-        logger.info('Document %s: extracted %s page(s) in %.1f seconds.', doc.id, len(pages), perf_counter() - stage_started)
+        logger.info('Document %s: extracted %s page(s) in %.1f seconds.', processing_document_id, len(pages), perf_counter() - stage_started)
         extracted_chars = sum(len(text) for _, text in pages)
         if extracted_chars > max_extracted_chars():
             raise ValueError(
@@ -72,9 +73,9 @@ def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes, docu
         chunks = chunk_pages(pages)
         if not chunks:
             raise ValueError('No extractable text found. Scanned PDFs require OCR.')
-        logger.info('Document %s: created %s text chunk(s).', doc.id, len(chunks))
+        logger.info('Document %s: created %s text chunk(s).', processing_document_id, len(chunks))
         stage_started = perf_counter()
-        logger.info('Document %s: generating embeddings in batches.', doc.id)
+        logger.info('Document %s: generating embeddings in batches.', processing_document_id)
         for batch_start in range(0, len(chunks), 32):
             batch_chunks = chunks[batch_start:batch_start + 32]
             batch_contents = [content for _, content in batch_chunks]
@@ -85,7 +86,7 @@ def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes, docu
             ]
             for offset, ((page, content), embedding) in enumerate(zip(batch_chunks, vectors)):
                 db.add(DocumentChunk(
-                    document_id=doc.id,
+                    document_id=processing_document_id,
                     chunk_index=batch_start + offset,
                     page_number=page,
                     content=content,
@@ -96,11 +97,11 @@ def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes, docu
             # the last point at which real progress was made.
             doc.updated_at = datetime.now(timezone.utc)
             db.commit()
-        logger.info('Document %s: generated embeddings in %.1f seconds.', doc.id, perf_counter() - stage_started)
+        logger.info('Document %s: generated embeddings in %.1f seconds.', processing_document_id, perf_counter() - stage_started)
         stage_started = perf_counter()
-        logger.info('Document %s: saving original file to Cloudinary.', doc.id)
+        logger.info('Document %s: saving original file to Cloudinary.', processing_document_id)
         stored = store_file(name, data)
-        logger.info('Document %s: Cloudinary save finished in %.1f seconds.', doc.id, perf_counter() - stage_started)
+        logger.info('Document %s: Cloudinary save finished in %.1f seconds.', processing_document_id, perf_counter() - stage_started)
         doc.cloudinary_public_id = stored['public_id']
         doc.cloudinary_resource_type = stored['resource_type']
         doc.storage_url = stored['url']
@@ -110,19 +111,33 @@ def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes, docu
         doc.processed_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(doc)
-        logger.info('Document %s ready after %.1f seconds.', doc.id, perf_counter() - overall_started)
+        logger.info('Document %s ready after %.1f seconds.', processing_document_id, perf_counter() - overall_started)
     except Exception as exc:
-        logger.exception('Document processing failed for document %s', doc.id)
+        # A user may delete a document while extraction or embedding is in
+        # progress. Roll back first and retain the ID separately: touching an
+        # expired ORM object after a failed flush can raise PendingRollbackError.
         db.rollback()
-        db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == doc.id))
+        logger.exception('Document processing failed for document %s', processing_document_id)
         if stored:
             try:
                 delete_file(stored['public_id'], stored['resource_type'])
             except Exception:
                 pass
-        doc = db.get(Document, doc.id)
-        doc.status = 'failed'
-        doc.processing_error = str(exc)[:500] or 'Document processing failed.'
+        db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == processing_document_id))
+        result = db.execute(
+            Document.__table__.update()
+            .where(Document.id == processing_document_id)
+            .values(
+                status='failed',
+                processing_error=str(exc)[:500] or 'Document processing failed.',
+                updated_at=datetime.now(timezone.utc),
+            )
+        )
+        if result.rowcount == 0:
+            # The row was deleted while this worker was processing it. The
+            # chunk cleanup is harmless and the database may have cascaded it.
+            db.rollback()
+            return None
         db.commit()
-        db.refresh(doc)
+        doc = db.get(Document, processing_document_id)
     return doc

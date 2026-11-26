@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, Text, ForeignKey, Boolean, Integer, BigInteger, DateTime, UniqueConstraint
+from sqlalchemy import String, Text, ForeignKey, Boolean, Integer, BigInteger, DateTime, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from pgvector.sqlalchemy import Vector
@@ -82,6 +82,9 @@ class Conversation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Keep compatibility with existing Neon databases that still require this
+    # legacy column, while allowing new schemas to create it with a DB default.
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     user = relationship('User', back_populates='conversations')
     knowledge_base = relationship('KnowledgeBase', back_populates='conversations')
     messages = relationship('Message', back_populates='conversation', cascade='all, delete-orphan')
