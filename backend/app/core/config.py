@@ -11,7 +11,7 @@ from sqlalchemy.engine import make_url
 # repository root or backend/ without relying on the shell's working directory.
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PROJECT_ENV_FILES = (PROJECT_ROOT / 'frontend' / '.env', PROJECT_ROOT / 'backend' / '.env')
-MAX_SAFE_UPLOAD_MB = 25
+MAX_SAFE_UPLOAD_MB = 20
 
 class Settings(BaseSettings):
     DATABASE_URL: str
@@ -24,8 +24,8 @@ class Settings(BaseSettings):
     )
     FRONTEND_ORIGINS: str = ''
     MAX_UPLOAD_MB: int = Field(
-        # Keep per-request memory bounded on the current CPU-only web service.
-        default=25,
+        # Keep uploads within the configured Vercel function request limit.
+        default=20,
         validation_alias=AliasChoices('MAX_UPLOAD_MB', 'MAX_UPLOAD_SIZE_MB'),
     )
     CLOUDINARY_CLOUD_NAME: str = ''

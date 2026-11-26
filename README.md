@@ -52,7 +52,7 @@ Frontend: http://localhost:3000
 ## How document Q&A works
 
 1. User logs in and creates a knowledge base.
-2. User uploads a PDF, DOCX, or TXT file (up to 25 MB; indexing continues in the background).
+2. User uploads a PDF, DOCX, or TXT file (up to 20 MB; indexing continues in the background).
 3. Backend extracts text and splits it into chunks.
 4. MiniLM generates 384-dimensional embeddings; PostgreSQL pgvector stores them.
 5. A question is embedded and similar chunks are retrieved.
@@ -60,11 +60,11 @@ Frontend: http://localhost:3000
 
 ## Important limitations
 
-- This repository contains the local application source; it is not yet a published deployment.
+- Vercel deploys the frontend and FastAPI backend as services from the repository root.
 - The local PostgreSQL connection and pgvector extension were checked read-only, the frontend production build succeeds, and backend unit tests pass.
 - PDF extraction handles text PDFs; scanned PDFs require OCR, which is not included.
 - Upload requests return once the file is accepted. Indexing runs in a serialized in-process background task; use a durable job queue and separate worker for restart-safe production processing.
 - Original files are stored in Cloudinary, while document metadata, extracted text, embeddings, accounts, and conversations are stored in Neon. Uploads fail if Cloudinary storage is not configured. Deleting a document or knowledge base also removes the associated Cloudinary originals.
-- The root `vercel.json` configures Vercel Services for the frontend and FastAPI backend on one project and domain. In Vercel, set the project framework to **Services** and configure the environment variables listed in `backend/ENV_SETUP.md` for the backend service. The frontend defaults to the same-domain `/api/v1` route; set `VITE_API_BASE_URL` only when using a separately hosted API. Local `.env` values do not configure production deployments.
-- Vercel Functions currently cap request bodies at 4.5 MB by default. Their 20 MiB large-request beta requires an environment opt-in and 4 GB Performance memory, still below this app's 25 MB upload limit. Direct-to-Cloudinary uploads or a different backend host are needed for the full upload limit. PyTorch and sentence-transformers also make the Python function large and slow to start; confirm the backend builds within Vercel's Python bundle limits before relying on this deployment.
+- In Vercel, set the project framework to **Services** and configure the backend variables listed in `backend/ENV_SETUP.md`. Enable Vercel Large Functions with `VERCEL_SUPPORT_LARGE_FUNCTIONS=1` for the 1.18 GB Python bundle, with Fluid Compute and Active CPU enabled.
+- The app accepts files up to 20 MB. Vercel's 20 MiB request body beta requires `VERCEL_SUPPORT_LARGE_REQUEST_BODY=1` and 4 GB Performance memory on the backend service. A 20 MB file plus multipart overhead fits under 20 MiB. Redeploy after changing environment variables. The frontend uses same-origin `/api/v1`; set `VITE_API_BASE_URL` only if the backend is deployed as a separate project.
 - Review the schema and ownership/deletion behavior before migrating an existing database.

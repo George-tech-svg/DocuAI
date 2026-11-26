@@ -280,6 +280,10 @@ export default function App() {
     try {
       for (const [index, file] of files.entries()) {
         setBusyMessage(`Uploading file ${index + 1} of ${files.length}: ${file.name}`);
+        if (file.size > 20_000_000) {
+          failures.push(`${file.name}: File exceeds the 20 MB limit.`);
+          continue;
+        }
         const formData = new FormData();
         formData.append("file", file);
 
@@ -653,7 +657,7 @@ export default function App() {
             <div className="upload-panel-heading">
               <div>
                 <h2 id="upload-title">Files in {selectedKnowledgeBase?.name ?? "this folder"}</h2>
-                <p>PDF, DOCX, or TXT · up to 25 MB per file</p>
+                <p>PDF, DOCX, or TXT · up to 20 MB per file</p>
               </div>
               <button className="icon-button" aria-label="Close uploads" onClick={() => setIsUploadPanelOpen(false)} disabled={isBusy}><X /></button>
             </div>
