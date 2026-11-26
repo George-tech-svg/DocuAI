@@ -35,14 +35,20 @@ def owned_document(db, user_id, kb_id, doc_id):
         raise HTTPException(404, 'Document not found')
     return d
 
-def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes):
+def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes, document_id=None):
     """Store document metadata, extract text, generate embeddings, and update status."""
     owned_kb(db, user_id, kb_id)
     name, mime = validate_upload(filename, data, max_upload_mb())
-    doc = Document(knowledge_base_id=kb_id, original_filename=name, content_type=mime, file_size_bytes=len(data), status='pending', chunk_count=0)
-    db.add(doc)
-    db.commit()
-    db.refresh(doc)
+    if document_id is None:
+        doc = Document(knowledge_base_id=kb_id, original_filename=name, content_type=mime, file_size_bytes=len(data), status='pending', chunk_count=0)
+        db.add(doc)
+        db.commit()
+        db.refresh(doc)
+    else:
+        doc = db.get(Document, document_id)
+        # The user may have deleted the pending record before the worker began.
+        if doc is None or doc.knowledge_base_id != kb_id:
+            return None
     overall_started = perf_counter()
     doc.status = 'processing'
     db.commit()

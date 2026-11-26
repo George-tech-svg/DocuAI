@@ -2,8 +2,8 @@
 
 from uuid import UUID
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
-from starlette.concurrency import run_in_threadpool
+from threading import Lock
+from fastapi import APIRouter, BackgroundTasks, Depends, UploadFile, File, HTTPException
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 from app.db.session import get_db
@@ -13,9 +13,11 @@ from app.models.user import User
 from app.models.document import Document
 from app.schemas.document import DocumentResponse, DocumentListResponse, DocumentUploadResponse, DocumentStatusResponse
 from app.services.document_service import owned_kb, owned_document, process_upload
+from app.services.file_validation import validate_upload
 from app.services.storage import delete_file
 from app.core.config import max_upload_mb
 router = APIRouter(prefix='/knowledge-bases/{kb_id}/documents', tags=['Documents'])
+_upload_processing_lock = Lock()
 
 def _fail_stale_processing(db: Session, kb_id: UUID):
     """Mark uploads abandoned by a worker restart so they don't stay pending forever."""
@@ -40,22 +42,35 @@ def _fail_stale_processing(db: Session, kb_id: UUID):
     else:
         db.rollback()
 
-def _process_upload_in_worker(user_id, kb_id, filename: str, data: bytes):
-    """Give the worker its own SQLAlchemy session for the full sync workflow."""
-    with sessionmaker(bind=get_engine())() as worker_db:
-        return process_upload(worker_db, user_id, kb_id, filename, data)
+def _process_upload_in_worker(user_id, kb_id, document_id, filename: str, data: bytes):
+    """Serialize heavy indexing and give it a dedicated database session."""
+    with _upload_processing_lock:
+        with sessionmaker(bind=get_engine())() as worker_db:
+            return process_upload(worker_db, user_id, kb_id, filename, data, document_id=document_id)
 
 @router.post('', response_model=DocumentUploadResponse, status_code=201)
-async def upload(kb_id: UUID, file: UploadFile=File(...), user: User=Depends(current_user)):
+async def upload(kb_id: UUID, background_tasks: BackgroundTasks, file: UploadFile=File(...), user: User=Depends(current_user), db: Session=Depends(get_db)):
     max_bytes = max_upload_mb() * 1_000_000
     data = await file.read(max_bytes + 1)
     if len(data) > max_bytes:
         raise HTTPException(413, 'File too large')
-    # Keep the full synchronous DB, extraction, and embedding workflow on one
-    # worker thread with its own session; request dependency sessions stay on
-    # the server thread that authenticated the user.
-    doc = await run_in_threadpool(_process_upload_in_worker, user.id, kb_id, file.filename or '', data)
-    return DocumentUploadResponse(document=DocumentResponse.model_validate(doc), message='Document processed' if doc.status == 'ready' else 'Processing failed; see processing_error')
+    owned_kb(db, user.id, kb_id)
+    name, mime = validate_upload(file.filename or '', data, max_upload_mb())
+    doc = Document(
+        knowledge_base_id=kb_id,
+        original_filename=name,
+        content_type=mime,
+        file_size_bytes=len(data),
+        status='pending',
+        chunk_count=0,
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+    # Return the accepted document before extraction/model inference begins.
+    # The worker opens its own DB session; the request session is never shared.
+    background_tasks.add_task(_process_upload_in_worker, user.id, kb_id, doc.id, name, data)
+    return DocumentUploadResponse(document=DocumentResponse.model_validate(doc), message='Upload accepted; processing in background.')
 
 @router.get('', response_model=DocumentListResponse)
 def listing(kb_id: UUID, user: User=Depends(current_user), db: Session=Depends(get_db)):

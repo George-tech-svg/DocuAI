@@ -154,8 +154,7 @@ export default function App() {
     setConversationId(null);
   }, [token, selectedKnowledgeBaseId]);
 
-  // Uploads are processed synchronously by the API, so poll the document list
-  // after an upload response or a page reload until the saved status changes.
+  // Uploads are indexed in the background; poll until the saved status changes.
   const hasProcessingDocuments = documents.some(
     (document) => document.status === "pending" || document.status === "processing"
   );
@@ -290,7 +289,7 @@ export default function App() {
             token,
             { method: "POST", body: formData }
           );
-          if (response.document.status === "ready") {
+          if (response.document.status === "ready" || response.document.status === "pending" || response.document.status === "processing") {
             uploaded += 1;
           } else {
             failures.push(`${file.name}: ${response.document.processing_error ?? "Processing failed."}`);

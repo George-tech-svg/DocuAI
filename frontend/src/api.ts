@@ -4,7 +4,7 @@
  */
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ??
-  "https://docuai-6301.onrender.com/api/v1";
+  "/api/v1";
 
 /** Turn unknown JavaScript exceptions into readable messages. */
 export function getErrorMessage(error: unknown): string {
@@ -43,9 +43,7 @@ export async function request<T>(
     ? 3 * 60_000
     : options.body instanceof FormData
       ? 30 * 60_000
-      // Render may need around 40 seconds to cold start this service after it
-      // has been idle. Keep ordinary API requests alive long enough for that
-      // startup to finish and for the first database connection to complete.
+      // Allow time for a cold start and the first database connection.
       : 90_000;
   let timedOut = false;
   const timeoutId = window.setTimeout(() => {
@@ -106,14 +104,14 @@ export async function request<T>(
   } catch (error) {
     if (timedOut) {
       throw new Error(path === "/chat"
-        ? "The answer is taking longer than expected. Please try again; if this keeps happening, check the Render service logs."
-        : "The server took too long to respond. Please try again; if this keeps happening, check the Render service logs.");
+        ? "The answer is taking longer than expected. Please try again, then check the backend service logs if this continues."
+        : "The server took too long to respond. Please try again, then check the backend service logs if this continues.");
     }
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new Error("Request was cancelled.");
     }
     if (error instanceof TypeError) {
-      throw new Error("Cannot reach the DocuMind API. The Render service may be offline, still starting, or missing the production CORS configuration.");
+      throw new Error("Cannot reach the DocuMind API. The backend may be starting, restarting, or returning a gateway error. Check the backend logs for details.");
     }
     throw error;
   } finally {
