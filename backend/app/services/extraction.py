@@ -5,12 +5,12 @@ from io import BytesIO
 def extract_pages(name: str, content: bytes):
     """Read text from the uploaded file and preserve page numbers where available."""
     if name.lower().endswith('.pdf'):
-        # Import parsers only when a file needs them, keeping ordinary API
-        # startup independent of the document-processing libraries.
-        import pymupdf
+        # pypdf keeps the serverless bundle smaller than a native PDF engine,
+        # while supporting text extraction from normal, non-scanned PDFs.
+        from pypdf import PdfReader
 
-        with pymupdf.open(stream=content, filetype='pdf') as pdf:
-            return [(i + 1, page.get_text('text')) for i, page in enumerate(pdf)]
+        pdf = PdfReader(BytesIO(content), strict=False)
+        return [(i + 1, page.extract_text() or '') for i, page in enumerate(pdf.pages)]
     if name.lower().endswith('.docx'):
         from docx import Document as WordDocument
 
