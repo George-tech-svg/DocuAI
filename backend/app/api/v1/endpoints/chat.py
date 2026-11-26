@@ -54,7 +54,7 @@ def _save_chat(user_id, knowledge_base_id, conversation_id, question, answer, so
                 Conversation.id == conversation_id,
                 Conversation.user_id == user_id,
                 Conversation.knowledge_base_id == knowledge_base_id,
-            ))
+            ).with_for_update())
             if conversation is None:
                 raise HTTPException(404, 'Conversation not found')
         else:
@@ -127,4 +127,22 @@ def messages(conversation_id: UUID, user: User=Depends(current_user), db: Sessio
     conversation = db.scalar(select(Conversation).where(Conversation.id == conversation_id, Conversation.user_id == user.id))
     if not conversation:
         raise HTTPException(404, 'Conversation not found')
-    return list(db.scalars(select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at)).all())
+    saved_messages = db.scalars(
+        select(Message)
+        .where(Message.conversation_id == conversation_id)
+        .order_by(Message.message_index, Message.created_at)
+    ).all()
+    response = []
+    for message in saved_messages:
+        try:
+            sources = json.loads(message.sources_json) if message.sources_json else []
+        except (TypeError, json.JSONDecodeError):
+            sources = []
+        response.append(MessageResponse(
+            id=message.id,
+            role=message.role,
+            content=message.content,
+            created_at=message.created_at,
+            sources=sources,
+        ))
+    return response

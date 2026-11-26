@@ -32,6 +32,18 @@ export interface ChatMessage {
   sources?: AnswerSource[];
 }
 
+export interface ConversationRecord {
+  id: string;
+  title: string;
+  knowledge_base_id: string | null;
+  created_at: string;
+}
+
+export interface SavedChatMessage extends ChatMessage {
+  id: string;
+  created_at: string;
+}
+
 export interface AuthenticationResponse {
   access_token: string;
 }

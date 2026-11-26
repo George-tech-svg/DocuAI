@@ -4,6 +4,8 @@ import {
   BookOpen,
   ChevronDown,
   ChevronRight,
+  Download,
+  HelpCircle,
   FileText,
   LogOut,
   Menu,
@@ -27,6 +29,8 @@ import type {
   DocumentUploadResponse,
   KnowledgeBase,
   KnowledgeBaseListResponse,
+  ConversationRecord,
+  SavedChatMessage,
 } from "./types";
 
 /** The main application: sign in, manage documents, and chat with them. */
@@ -49,13 +53,18 @@ export default function App() {
   const [folderDocuments, setFolderDocuments] = useState<Record<string, { items: DocumentRecord[]; loading: boolean; error: string }>>({});
   const [isUploadPanelOpen, setIsUploadPanelOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isHistoryExpanded, setIsHistoryExpanded] = useState(true);
+  const [isHelpPanelOpen, setIsHelpPanelOpen] = useState(false);
   const [newKnowledgeBaseName, setNewKnowledgeBaseName] = useState("");
+  const [conversationHistory, setConversationHistory] = useState<ConversationRecord[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 
   // Chat messages and current conversation.
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const questionInputRef = useRef<HTMLInputElement>(null);
 
   // Shared feedback for network operations.
   const [isBusy, setIsBusy] = useState(false);
@@ -82,6 +91,23 @@ export default function App() {
       });
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
+    }
+  }
+
+  /** Load saved conversations for the history panel. */
+  async function refreshConversationHistory() {
+    if (!token) {
+      setConversationHistory([]);
+      return;
+    }
+    setIsHistoryLoading(true);
+    try {
+      const history = await request<ConversationRecord[]>("/conversations", token);
+      setConversationHistory(history);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setIsHistoryLoading(false);
     }
   }
 
@@ -147,6 +173,7 @@ export default function App() {
   // Refresh data after login or when the selected knowledge base changes.
   useEffect(() => {
     void refreshKnowledgeBases();
+    void refreshConversationHistory();
   }, [token]);
 
   useEffect(() => {
@@ -184,13 +211,16 @@ export default function App() {
   }, [messages, isBusy]);
 
   useEffect(() => {
-    if (!isMobileSidebarOpen) return;
+    if (!isMobileSidebarOpen && !isHelpPanelOpen) return;
     function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setIsMobileSidebarOpen(false);
+      if (event.key === "Escape") {
+        setIsMobileSidebarOpen(false);
+        setIsHelpPanelOpen(false);
+      }
     }
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [isMobileSidebarOpen]);
+  }, [isMobileSidebarOpen, isHelpPanelOpen]);
 
   /** Register a new user or sign in an existing user. */
   async function handleAuthentication(event: FormEvent<HTMLFormElement>) {
@@ -232,7 +262,103 @@ export default function App() {
     setFolderDocuments({});
     setMessages([]);
     setConversationId(null);
+    setConversationHistory([]);
     setIsMobileSidebarOpen(false);
+  }
+
+  /** Start an empty conversation while keeping the selected folder and file. */
+  function handleNewChat() {
+    if (isBusy) return;
+    setConversationId(null);
+    setMessages([]);
+    setQuestion("");
+    setErrorMessage("");
+    setIsHelpPanelOpen(false);
+    setIsMobileSidebarOpen(false);
+    window.setTimeout(() => questionInputRef.current?.focus(), 0);
+  }
+
+  /** Reopen a saved conversation, including the source excerpts for each answer. */
+  async function handleOpenConversation(conversation: ConversationRecord) {
+    if (isBusy) return;
+    setIsBusy(true);
+    setBusyMessage("Opening saved conversation...");
+    setErrorMessage("");
+    setSelectedDocumentId("");
+    if (conversation.knowledge_base_id) {
+      setSelectedKnowledgeBaseId(conversation.knowledge_base_id);
+    }
+    try {
+      const saved = await request<SavedChatMessage[]>(
+        `/conversations/${conversation.id}/messages`,
+        token,
+      );
+      setMessages(saved.map(({ role, content, sources }) => ({
+        role: role === "assistant" ? "assistant" : "user",
+        content,
+        sources,
+      })));
+      setConversationId(conversation.id);
+      setIsMobileSidebarOpen(false);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  /** Download a complete saved exchange as a Markdown transcript. */
+  function downloadConversation(title: string, chatMessages: ChatMessage[]) {
+    const transcript = [
+      `# ${title}`,
+      `Exported from DocuMind AI on ${new Date().toLocaleString()}`,
+      "",
+      ...chatMessages.flatMap((message) => {
+        const section = [
+          message.role === "user" ? "## You" : "## DocuMind AI",
+          message.content,
+          "",
+        ];
+        if (message.role === "assistant" && message.sources?.length) {
+          section.push("### Sources");
+          for (const source of message.sources) {
+            const page = source.page_number == null ? "" : `, page ${source.page_number}`;
+            section.push(`- ${source.filename}${page}: ${source.excerpt}`);
+          }
+          section.push("");
+        }
+        return section;
+      }),
+    ].join("\n");
+    const blob = new Blob([transcript], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const safeName = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "documind-chat";
+    link.href = url;
+    link.download = `${safeName}.md`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  /** Download a history item without first navigating into it. */
+  async function handleDownloadConversation(conversation: ConversationRecord) {
+    try {
+      const saved = await request<SavedChatMessage[]>(
+        `/conversations/${conversation.id}/messages`,
+        token,
+      );
+      downloadConversation(conversation.title, saved);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  }
+
+  function chooseExamplePrompt(prompt: string) {
+    setQuestion(prompt);
+    setIsHelpPanelOpen(false);
+    window.setTimeout(() => questionInputRef.current?.focus(), 0);
   }
 
   /** Create a private knowledge base for the current user. */
@@ -367,6 +493,7 @@ export default function App() {
           sources: response.sources,
         },
       ]);
+      void refreshConversationHistory();
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -459,6 +586,15 @@ export default function App() {
   const selectedKnowledgeBase = knowledgeBases.find(
     (knowledgeBase) => knowledgeBase.id === selectedKnowledgeBaseId
   );
+  const visibleConversations = conversationHistory.filter(
+    (conversation) => conversation.knowledge_base_id === selectedKnowledgeBaseId
+  );
+  const examplePrompts = [
+    { label: "Make a teaching summary", prompt: "Create a clear, well-organized teaching summary of this document. Include the main ideas, learning objectives, key terms, and a short conclusion." },
+    { label: "Build a lesson plan", prompt: "Turn this document into a practical lesson plan with learning objectives, a suggested teaching sequence, activities, and assessment questions." },
+    { label: "Create a quick quiz", prompt: "Create 8 questions from this document: a mix of multiple-choice and short-answer questions, followed by an answer key." },
+    { label: "Explain the key ideas", prompt: "Explain the most important ideas in this document in simple language, using examples from the document where helpful." },
+  ];
 
   // After login, show the sidebar, document list, and chat panel.
   return (
@@ -476,6 +612,9 @@ export default function App() {
         >
           <Menu size={19} />
           <span>{selectedKnowledgeBase?.name ?? "Folders"}</span>
+        </button>
+        <button className="mobile-new-chat" type="button" onClick={handleNewChat} title="New chat" aria-label="Start a new chat" disabled={isBusy}>
+          <Plus size={18} />
         </button>
       </div>
 
@@ -576,6 +715,56 @@ export default function App() {
           })}
         </nav>
 
+        <div className="history-section">
+          <div className="history-section-heading">
+            <button
+              className="history-toggle"
+              type="button"
+              aria-expanded={isHistoryExpanded}
+              onClick={() => setIsHistoryExpanded((expanded) => !expanded)}
+            >
+              {isHistoryExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+              <span>CHAT HISTORY</span>
+              <small>{visibleConversations.length}</small>
+            </button>
+            <button className="history-new-chat" type="button" onClick={handleNewChat} title="New chat" aria-label="Start a new chat" disabled={isBusy}>
+              <Plus size={17} />
+            </button>
+          </div>
+          {isHistoryExpanded && (
+            <div className="history-list" aria-label="Saved conversations">
+              {isHistoryLoading && <small className="history-empty">Loading chats…</small>}
+              {!isHistoryLoading && visibleConversations.length === 0 && (
+                <small className="history-empty">Your questions and answers will appear here.</small>
+              )}
+              {visibleConversations.map((conversation) => (
+                <div className={`history-row ${conversationId === conversation.id ? "selected" : ""}`} key={conversation.id}>
+                  <button
+                    className="history-open"
+                    type="button"
+                    title={conversation.title}
+                    disabled={isBusy}
+                    onClick={() => void handleOpenConversation(conversation)}
+                  >
+                    <MessageCircle size={14} />
+                    <span>{conversation.title || "New conversation"}</span>
+                  </button>
+                  <button
+                    className="history-download"
+                    type="button"
+                    title={`Download ${conversation.title}`}
+                    aria-label={`Download conversation: ${conversation.title}`}
+                    disabled={isBusy}
+                    onClick={() => void handleDownloadConversation(conversation)}
+                  >
+                    <Download size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="sidebottom">
           <div className="workspace-label"><ShieldCheck size={16} /> Private workspace</div>
           <button onClick={handleLogout}>
@@ -595,6 +784,27 @@ export default function App() {
             </div>
             <div className="chat-actions">
               <span className="pill">{documents.length} file{documents.length === 1 ? "" : "s"}</span>
+              <button className="chat-tool-button" type="button" onClick={handleNewChat} title="New chat" aria-label="Start a new chat" disabled={isBusy}>
+                <Plus size={17} />
+              </button>
+              {conversationId && messages.length > 0 && (
+                <button
+                  className="chat-tool-button"
+                  type="button"
+                  title="Download this conversation"
+                  aria-label="Download this conversation"
+                  disabled={isBusy}
+                  onClick={() => downloadConversation(
+                    conversationHistory.find((item) => item.id === conversationId)?.title ?? "DocuMind conversation",
+                    messages,
+                  )}
+                >
+                  <Download size={17} />
+                </button>
+              )}
+              <button className="chat-tool-button" type="button" onClick={() => setIsHelpPanelOpen(true)} title="Help and examples" aria-label="Open help and examples">
+                <HelpCircle size={17} />
+              </button>
               <button className="upload-trigger" onClick={() => setIsUploadPanelOpen(true)} disabled={!selectedKnowledgeBaseId}>
                 <Upload size={17} /> Add files
               </button>
@@ -612,8 +822,19 @@ export default function App() {
             {messages.length === 0 && (
               <div className="empty">
                 <BookOpen size={36} />
-                <h2>Ask about your files</h2>
-                <p>{documents.length ? "Ask a question to search this folder." : "Add a file, then ask a question about it."}</p>
+                <h2>What would you like to learn?</h2>
+                <p>{documents.some((document) => document.status === "ready")
+                  ? "Ask a question or choose an example to get started. Every answer is saved in your chat history."
+                  : "Add a document, then ask for a summary, lesson plan, key ideas, or answers to specific questions."}</p>
+                {documents.some((document) => document.status === "ready") && (
+                  <div className="prompt-suggestions">
+                    {examplePrompts.map((example) => (
+                      <button key={example.label} type="button" onClick={() => chooseExamplePrompt(example.prompt)}>
+                        {example.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             {messages.map((message, index) => (
@@ -642,9 +863,10 @@ export default function App() {
 
           <form className="composer" onSubmit={handleSendQuestion}>
             <input
+              ref={questionInputRef}
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
-              placeholder="Ask a question about your documents..."
+              placeholder="Ask for a summary, lesson plan, key ideas, or an answer..."
               disabled={!selectedKnowledgeBaseId || isBusy}
             />
             <button disabled={!selectedKnowledgeBaseId || isBusy || !question.trim()} aria-label="Send question">
@@ -653,6 +875,33 @@ export default function App() {
           </form>
         </section>
       </main>
+
+      {isHelpPanelOpen && (
+        <div className="help-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setIsHelpPanelOpen(false); }}>
+          <section className="help-panel" role="dialog" aria-modal="true" aria-labelledby="help-title">
+            <div className="help-panel-heading">
+              <div>
+                <h2 id="help-title">Help with your documents</h2>
+                <p>Turn your files into clear, useful work.</p>
+              </div>
+              <button className="icon-button" type="button" aria-label="Close help" onClick={() => setIsHelpPanelOpen(false)}><X size={19} /></button>
+            </div>
+            <div className="help-panel-content">
+              <h3>Try an example</h3>
+              {examplePrompts.map((example) => (
+                <button className="help-example" key={example.label} type="button" onClick={() => chooseExamplePrompt(example.prompt)}>
+                  <strong>{example.label}</strong>
+                  <span>{example.prompt}</span>
+                </button>
+              ))}
+              <div className="help-note">
+                <strong>Your work is saved</strong>
+                <p>Each question and answer is stored in Chat History for this folder. Select a past chat to reopen it, or use its download icon to save the exchange and cited sources as a Markdown file.</p>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
 
       {isUploadPanelOpen && (
         <div className="upload-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !isBusy) setIsUploadPanelOpen(false); }}>

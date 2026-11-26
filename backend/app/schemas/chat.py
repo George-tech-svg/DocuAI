@@ -34,3 +34,4 @@ class MessageResponse(BaseModel):
     role: str
     content: str
     created_at: datetime
+    sources: list[Source] = Field(default_factory=list)
