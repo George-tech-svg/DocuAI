@@ -12,7 +12,10 @@ from app.services.embeddings import MODEL_CACHE_DIR, MODEL_ID, model
 
 def main():
     print(f"Preloading {MODEL_ID} into {MODEL_CACHE_DIR}", flush=True)
-    model()
+    embedder = model()
+    vectors = list(embedder.embed(["Vercel build model validation"], batch_size=1))
+    if len(vectors) != 1 or len(vectors[0]) != 384:
+        raise RuntimeError("FastEmbed model validation failed: expected one 384-dimensional vector.")
     print("Embedding model download and initialization complete.", flush=True)
 
 

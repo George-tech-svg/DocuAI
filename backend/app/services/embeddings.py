@@ -8,10 +8,9 @@ from time import perf_counter
 
 logger = logging.getLogger(__name__)
 MODEL_ID = 'sentence-transformers/all-MiniLM-L6-v2'
-# The model is preloaded into this directory during Vercel's build and bundled
-# with the function, avoiding a runtime Hugging Face download from a serverless
-# instance. The same path is used by local development and persistent hosts.
-MODEL_CACHE_DIR = Path(__file__).resolve().parents[2] / '.model-cache'
+# Keep the cache in a visible directory so Vercel's function bundler can include
+# its downloaded ONNX files. The build preloader warms this cache before deploy.
+MODEL_CACHE_DIR = Path(__file__).resolve().parents[2] / 'model-cache'
 _model_instance = None
 _model_lock = Lock()
 _encode_lock = Lock()
