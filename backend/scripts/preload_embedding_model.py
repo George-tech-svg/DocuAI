@@ -1,4 +1,4 @@
-"""Download the FastEmbed model during the Render build, not a user request."""
+"""Download and validate the FastEmbed model during the service build."""
 
 from pathlib import Path
 import sys

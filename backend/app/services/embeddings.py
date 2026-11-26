@@ -3,21 +3,15 @@
 import logging
 import os
 from pathlib import Path
-import tempfile
 from threading import Lock
 from time import perf_counter
 
 logger = logging.getLogger(__name__)
 MODEL_ID = 'sentence-transformers/all-MiniLM-L6-v2'
-_LOCAL_MODEL_CACHE_DIR = Path(__file__).resolve().parents[2] / '.model-cache'
-# Vercel's deployed function bundle is read-only. Cache downloaded ONNX model
-# files in its writable temporary directory; keep the existing local/Render
-# cache path for environments that can persist build artifacts.
-MODEL_CACHE_DIR = (
-    Path(tempfile.gettempdir()) / 'documind-fastembed-cache'
-    if os.getenv('VERCEL')
-    else _LOCAL_MODEL_CACHE_DIR
-)
+# The model is preloaded into this directory during Vercel's build and bundled
+# with the function, avoiding a runtime Hugging Face download from a serverless
+# instance. The same path is used by local development and persistent hosts.
+MODEL_CACHE_DIR = Path(__file__).resolve().parents[2] / '.model-cache'
 _model_instance = None
 _model_lock = Lock()
 _encode_lock = Lock()

@@ -4,7 +4,8 @@
     "backend": {
       "root": "backend",
       "entrypoint": "app.main:app",
-      "framework": "fastapi"
+      "framework": "fastapi",
+      "includeFiles": [".model-cache/**"]
     },
     "frontend": {
       "root": "frontend",

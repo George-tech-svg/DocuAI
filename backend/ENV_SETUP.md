@@ -24,8 +24,10 @@ The Vite frontend reads `VITE_API_BASE_URL` at build time. For this repository's
 Set all service variables in the backend hosting provider as well as the appropriate Vercel variables. Local `.env` files do not configure deployed services.
 
 The backend uses FastEmbed's ONNX runtime rather than PyTorch so its function
-bundle stays below Vercel's standard Python size limit. The app accepts files
-up to 20 MB, but Vercel's standard request body limit is 4.5 MB. The 20 MiB
+bundle stays below Vercel's standard Python size limit. The Vercel build script
+downloads the ONNX model into `backend/.model-cache`, and `vercel.json` includes
+that cache in the backend function so runtime uploads do not need Hugging Face
+network access. The app accepts files up to 20 MB, but Vercel's standard request body limit is 4.5 MB. The 20 MiB
 request-body beta needs `VERCEL_SUPPORT_LARGE_REQUEST_BODY=1` and Performance
 (4 GB) function memory. Hobby projects cannot select 4 GB; on Hobby, use
 direct-to-Cloudinary uploads or keep uploads below Vercel's request body limit.
