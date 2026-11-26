@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import type { ChangeEvent, FormEvent } from "react";
+import type { ChangeEvent, FormEvent, ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   BookOpen,
   Archive,
@@ -10,6 +11,7 @@ import {
   FileText,
   LogOut,
   Menu,
+  MoreVertical,
   Pencil,
   Pin,
   MessageCircle,
@@ -37,6 +39,72 @@ import type {
   SavedChatMessage,
 } from "./types";
 
+type ItemAction = { label: string; icon: ReactNode; onClick: () => void; danger?: boolean };
+
+function ItemActionMenu({ label, open, onToggle, onClose, items }: {
+  label: string;
+  open: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+  items: ItemAction[];
+}) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
+
+  useEffect(() => {
+    if (!open) return;
+    function positionMenu() {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const menuHeight = items.length * 40 + 12;
+      setMenuPosition({
+        top: window.innerHeight - rect.bottom >= menuHeight ? rect.bottom + 4 : Math.max(8, rect.top - menuHeight - 4),
+        left: Math.min(window.innerWidth - 188, Math.max(8, rect.right - 180)),
+      });
+    }
+    positionMenu();
+    window.addEventListener("resize", positionMenu);
+    window.addEventListener("scroll", positionMenu, true);
+    return () => {
+      window.removeEventListener("resize", positionMenu);
+      window.removeEventListener("scroll", positionMenu, true);
+    };
+  }, [open, items.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    function dismiss(event: PointerEvent) {
+      const target = event.target;
+      if (target instanceof Node && !triggerRef.current?.contains(target) && !menuRef.current?.contains(target)) onClose();
+    }
+    function closeOnEscape(event: KeyboardEvent) { if (event.key === "Escape") onClose(); }
+    document.addEventListener("pointerdown", dismiss);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", dismiss);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open, onClose]);
+
+  return (
+    <div className="item-menu-wrap">
+      <button ref={triggerRef} className="item-menu-trigger" type="button" aria-label={`More actions for ${label}`} aria-haspopup="menu" aria-expanded={open} title={`More actions for ${label}`} onClick={onToggle}>
+        <MoreVertical size={17} />
+      </button>
+      {open && createPortal(
+        <div ref={menuRef} className="item-menu" role="menu" aria-label={`Actions for ${label}`} style={{ top: menuPosition.top, left: menuPosition.left }}>
+          {items.map((item) => (
+            <button className={item.danger ? "danger-action" : ""} key={item.label} type="button" role="menuitem" onClick={() => { onClose(); item.onClick(); }}>
+              {item.icon}<span>{item.label}</span>
+            </button>
+          ))}
+        </div>, document.body,
+      )}
+    </div>
+  );
+}
+
 /** The main application: sign in, manage documents, and chat with them. */
 export default function App() {
   // Authentication form and saved session.
@@ -58,6 +126,7 @@ export default function App() {
   const [folderDocuments, setFolderDocuments] = useState<Record<string, { items: DocumentRecord[]; loading: boolean; error: string }>>({});
   const [isUploadPanelOpen, setIsUploadPanelOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [openItemMenuId, setOpenItemMenuId] = useState<string | null>(null);
   const [isHelpPanelOpen, setIsHelpPanelOpen] = useState(false);
   const [newKnowledgeBaseName, setNewKnowledgeBaseName] = useState("");
   const [conversationHistory, setConversationHistory] = useState<ConversationRecord[]>([]);
@@ -782,12 +851,18 @@ export default function App() {
                     {knowledgeBase.is_archived && <small>Archived</small>}
                     {knowledgeBase.is_pinned && <Pin size={13} aria-label="Pinned" />}
                   </button>
-                  <div className="item-actions">
-                    <button type="button" title={knowledgeBase.is_pinned ? "Unpin folder" : "Pin folder"} aria-label={knowledgeBase.is_pinned ? "Unpin folder" : "Pin folder"} onClick={() => void updateItem(`/knowledge-bases/${knowledgeBase.id}`, { is_pinned: !knowledgeBase.is_pinned })}><Pin size={13} /></button>
-                    <button type="button" title="Rename folder" aria-label="Rename folder" onClick={() => promptRename("folder", knowledgeBase.name, (name) => void updateItem(`/knowledge-bases/${knowledgeBase.id}`, { name }))}><Pencil size={13} /></button>
-                    <button type="button" title={knowledgeBase.is_archived ? "Restore folder" : "Archive folder"} aria-label={knowledgeBase.is_archived ? "Restore folder" : "Archive folder"} onClick={() => void updateItem(`/knowledge-bases/${knowledgeBase.id}`, { is_archived: !knowledgeBase.is_archived })}><Archive size={13} /></button>
-                    <button type="button" title="Delete folder" aria-label="Delete folder" onClick={() => void handleDeleteKnowledgeBase(knowledgeBase)}><Trash2 size={13} /></button>
-                  </div>
+                  <ItemActionMenu
+                    label={knowledgeBase.name}
+                    open={openItemMenuId === `folder-${knowledgeBase.id}`}
+                    onToggle={() => setOpenItemMenuId((current) => current === `folder-${knowledgeBase.id}` ? null : `folder-${knowledgeBase.id}`)}
+                    onClose={() => setOpenItemMenuId(null)}
+                    items={[
+                      { label: knowledgeBase.is_pinned ? "Unpin" : "Pin", icon: <Pin size={15} />, onClick: () => void updateItem(`/knowledge-bases/${knowledgeBase.id}`, { is_pinned: !knowledgeBase.is_pinned }) },
+                      { label: "Rename", icon: <Pencil size={15} />, onClick: () => promptRename("folder", knowledgeBase.name, (name) => void updateItem(`/knowledge-bases/${knowledgeBase.id}`, { name })) },
+                      { label: knowledgeBase.is_archived ? "Restore" : "Archive", icon: <Archive size={15} />, onClick: () => void updateItem(`/knowledge-bases/${knowledgeBase.id}`, { is_archived: !knowledgeBase.is_archived }) },
+                      { label: "Delete", icon: <Trash2 size={15} />, danger: true, onClick: () => void handleDeleteKnowledgeBase(knowledgeBase) },
+                    ]}
+                  />
                 </div>
                 {isExpanded && (
                   <div className="folder-file-tree" aria-label={`Files in ${knowledgeBase.name}`}>
@@ -824,12 +899,18 @@ export default function App() {
                                 <small>{document.status === "pending" ? "waiting" : document.status}</small>
                               )}
                             </button>
-                            <div className="item-actions file-actions">
-                              <button type="button" title={document.is_pinned ? "Unpin file" : "Pin file"} aria-label={document.is_pinned ? "Unpin file" : "Pin file"} onClick={() => void updateItem(`/knowledge-bases/${knowledgeBase.id}/documents/${document.id}`, { is_pinned: !document.is_pinned })}><Pin size={12} /></button>
-                              <button type="button" title="Rename file" aria-label="Rename file" onClick={() => promptRename("file", document.original_filename, (original_filename) => void updateItem(`/knowledge-bases/${knowledgeBase.id}/documents/${document.id}`, { original_filename }))}><Pencil size={12} /></button>
-                              <button type="button" title={document.is_archived ? "Restore file" : "Archive file"} aria-label={document.is_archived ? "Restore file" : "Archive file"} onClick={() => void updateItem(`/knowledge-bases/${knowledgeBase.id}/documents/${document.id}`, { is_archived: !document.is_archived })}><Archive size={12} /></button>
-                              <button type="button" title="Delete file" aria-label="Delete file" onClick={() => void handleDeleteDocument(knowledgeBase.id, document.id)}><Trash2 size={12} /></button>
-                            </div>
+                            <ItemActionMenu
+                              label={document.original_filename}
+                              open={openItemMenuId === `document-${document.id}`}
+                              onToggle={() => setOpenItemMenuId((current) => current === `document-${document.id}` ? null : `document-${document.id}`)}
+                              onClose={() => setOpenItemMenuId(null)}
+                              items={[
+                                { label: document.is_pinned ? "Unpin" : "Pin", icon: <Pin size={15} />, onClick: () => void updateItem(`/knowledge-bases/${knowledgeBase.id}/documents/${document.id}`, { is_pinned: !document.is_pinned }) },
+                                { label: "Rename", icon: <Pencil size={15} />, onClick: () => promptRename("file", document.original_filename, (original_filename) => void updateItem(`/knowledge-bases/${knowledgeBase.id}/documents/${document.id}`, { original_filename })) },
+                                { label: document.is_archived ? "Restore" : "Archive", icon: <Archive size={15} />, onClick: () => void updateItem(`/knowledge-bases/${knowledgeBase.id}/documents/${document.id}`, { is_archived: !document.is_archived }) },
+                                { label: "Delete", icon: <Trash2 size={15} />, danger: true, onClick: () => void handleDeleteDocument(knowledgeBase.id, document.id) },
+                              ]}
+                            />
                           </div>
                           {isDocumentExpanded && (
                             <div className="document-chat-list" aria-label={`Chats about ${document.original_filename}`}>
@@ -850,20 +931,19 @@ export default function App() {
                                     <span>{conversation.title || "New conversation"}</span>
                                     {conversation.is_pinned && <Pin size={12} aria-label="Pinned" />}
                                   </button>
-                                  <button className="history-download" type="button" title={conversation.is_pinned ? "Unpin chat" : "Pin chat"} aria-label={conversation.is_pinned ? "Unpin chat" : "Pin chat"} onClick={() => void updateItem(`/conversations/${conversation.id}`, { is_pinned: !conversation.is_pinned })}><Pin size={12} /></button>
-                                  <button className="history-download" type="button" title="Rename chat" aria-label="Rename chat" onClick={() => promptRename("chat", conversation.title, (title) => void updateItem(`/conversations/${conversation.id}`, { title }))}><Pencil size={12} /></button>
-                                  <button className="history-download" type="button" title={conversation.is_archived ? "Restore chat" : "Archive chat"} aria-label={conversation.is_archived ? "Restore chat" : "Archive chat"} onClick={() => void updateItem(`/conversations/${conversation.id}`, { is_archived: !conversation.is_archived })}><Archive size={12} /></button>
-                                  <button className="history-download" type="button" title="Delete chat" aria-label="Delete chat" onClick={() => void handleDeleteConversation(conversation)}><Trash2 size={12} /></button>
-                                  <button
-                                    className="history-download"
-                                    type="button"
-                                    title={`Download ${conversation.title}`}
-                                    aria-label={`Download conversation: ${conversation.title}`}
-                                    disabled={isBusy}
-                                    onClick={() => void handleDownloadConversation(conversation)}
-                                  >
-                                    <Download size={13} />
-                                  </button>
+                                  <ItemActionMenu
+                                    label={conversation.title}
+                                    open={openItemMenuId === `chat-${conversation.id}`}
+                                    onToggle={() => setOpenItemMenuId((current) => current === `chat-${conversation.id}` ? null : `chat-${conversation.id}`)}
+                                    onClose={() => setOpenItemMenuId(null)}
+                                    items={[
+                                      { label: conversation.is_pinned ? "Unpin" : "Pin", icon: <Pin size={15} />, onClick: () => void updateItem(`/conversations/${conversation.id}`, { is_pinned: !conversation.is_pinned }) },
+                                      { label: "Rename", icon: <Pencil size={15} />, onClick: () => promptRename("chat", conversation.title, (title) => void updateItem(`/conversations/${conversation.id}`, { title })) },
+                                      { label: conversation.is_archived ? "Restore" : "Archive", icon: <Archive size={15} />, onClick: () => void updateItem(`/conversations/${conversation.id}`, { is_archived: !conversation.is_archived }) },
+                                      { label: "Download", icon: <Download size={15} />, onClick: () => void handleDownloadConversation(conversation) },
+                                      { label: "Delete", icon: <Trash2 size={15} />, danger: true, onClick: () => void handleDeleteConversation(conversation) },
+                                    ]}
+                                  />
                                 </div>
                               ))}
                             </div>

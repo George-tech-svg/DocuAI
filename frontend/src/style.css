@@ -423,9 +423,15 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
 .document-chat-list .history-open { padding-top: 6px; padding-bottom: 6px; font-size: 11px; }
 .document-chat-list .history-empty { font-size: 10px; }
 .document-tree-node:has(.folder-file-row.selected) > .document-chat-list { border-left-color: #327fc1; }
-.item-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 1px; opacity: .75; }
-.item-actions button { display: grid; width: 25px; height: 28px; place-items: center; padding: 0; border: 0; border-radius: 5px; background: transparent; color: #587386; }
-.item-actions button:hover, .history-download:hover { background: #dce8ec; color: #205f86; }
+.item-menu-wrap { display: flex; flex: 0 0 auto; align-items: center; }
+.item-menu-trigger { display: grid; flex: 0 0 32px; width: 32px; height: 34px; place-items: center; padding: 0; border: 0; border-radius: 7px; background: transparent; color: #587386; }
+.item-menu-trigger:hover, .item-menu-trigger[aria-expanded="true"] { background: #dce8ec; color: #205f86; }
+.item-menu { position: fixed; z-index: 100; width: 180px; padding: 5px; border: 1px solid #cbd9df; border-radius: 10px; background: #fff; box-shadow: 0 12px 32px #172b3b2e; }
+.item-menu button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 38px; padding: 8px 10px; border: 0; border-radius: 6px; background: transparent; color: #415e70; text-align: left; font-size: 13px; }
+.item-menu button:hover { background: #eef3f5; }
+.item-menu button.danger-action { color: #a23b43; }
+.item-menu button.danger-action:hover { background: #fbebeb; }
+.item-menu button svg { flex: 0 0 auto; }
 .folder-tree-row .folder-select { flex: 1; }
 .document-tree-row .folder-file-row { flex: 1; }
 .history-row.archived { opacity: .68; }
@@ -510,8 +516,7 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
 
   .folder-menu-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chat-actions button[aria-label="Start a new chat"] { display: none; }
-  .item-actions { opacity: 1; }
-  .item-actions button { width: 30px; min-height: 36px; }
+  .item-menu-trigger { flex-basis: 40px; width: 40px; height: 40px; }
   .chat-heading { align-items: flex-start; }
   .chat-heading > div:first-child { min-width: 0; }
   .chat-heading h2 { overflow-wrap: anywhere; }
