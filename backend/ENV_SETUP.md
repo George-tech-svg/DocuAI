@@ -31,6 +31,17 @@ Required backend variables:
 - `MAX_EXTRACTED_CHARS`: extracted text limit, capped at 5,000,000.
 - `DEEPSEEK_MODEL`: optional; defaults to `deepseek-flash`.
 - `API_V1_PREFIX`: defaults to `/api/v1`.
+- `MPESA_ENVIRONMENT`: optional; `sandbox` by default, or `production` after
+  Safaricom has enabled the Daraja product for the shortcode.
+- `MPESA_CONSUMER_KEY`, `MPESA_CONSUMER_SECRET`, `MPESA_SHORTCODE`, and
+  `MPESA_PASSKEY`: server-only Daraja credentials. Never add these as `VITE_*`
+  variables or expose them to the frontend.
+- `MPESA_CALLBACK_BASE_URL`: optional public HTTPS origin for Daraja callbacks;
+  defaults to `FRONTEND_ORIGIN`.
+- `MPESA_TRANSACTION_TYPE`: optional; defaults to `CustomerPayBillOnline`.
+- `SUBSCRIPTIONS_ENFORCED`: optional; keep `false` while testing, then set
+  `true` after live payments and plans have been verified to require active
+  subscriptions for uploads and chat.
 
 `APP_ENV`, `APP_NAME`, `APP_VERSION`, and `DEBUG` are retained from the
 existing environment file for continuity; the API currently uses its own
@@ -65,5 +76,18 @@ this after pulling updates that change the database schema and before using the
 new backend. The document-scoped chat history migration adds a nullable link
 from each conversation to its document; existing conversations stay available
 as folder-level chats.
+
+## Platform administration and billing
+
+After creating the owner account, promote it from the `backend` directory with
+`python scripts/promote_admin.py owner@example.com`. This command only promotes
+an existing account and never accepts administrator status from public
+registration. Sign out and back in to load the Admin console.
+
+Create one or more monthly plans in Admin → Plans. Monthly M-Pesa prompts are
+sent only after the Daraja server credentials and shortcode are configured in
+the backend environment. A plan renews after its payment callback is confirmed.
+Use Daraja sandbox credentials for testing; configure the live shortcode and
+production credentials separately before enabling `SUBSCRIPTIONS_ENFORCED`.
 Local `.env` files do not configure Vercel; update the Vercel project
 environment and redeploy after changing production variables.

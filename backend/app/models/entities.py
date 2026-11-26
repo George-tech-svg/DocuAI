@@ -110,3 +110,42 @@ class Message(Base):
     model_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     is_error: Mapped[bool] = mapped_column(Boolean, default=False)
     conversation = relationship('Conversation', back_populates='messages')
+
+class SubscriptionPlan(Base):
+    __tablename__ = 'subscription_plans'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uid)
+    name: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(Text, default='')
+    price_kes: Mapped[int] = mapped_column(Integer)
+    duration_days: Mapped[int] = mapped_column(Integer, default=30)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default='true')
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+class Subscription(Base):
+    __tablename__ = 'subscriptions'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uid)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    plan_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('subscription_plans.id', ondelete='RESTRICT'), index=True)
+    status: Mapped[str] = mapped_column(String(20), default='pending')
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+class MpesaPayment(Base):
+    __tablename__ = 'mpesa_payments'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uid)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    subscription_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('subscriptions.id', ondelete='CASCADE'), index=True)
+    amount_kes: Mapped[int] = mapped_column(Integer)
+    phone_number: Mapped[str] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(20), default='pending', index=True)
+    callback_token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    checkout_request_id: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True)
+    merchant_request_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    mpesa_receipt: Mapped[str | None] = mapped_column(String(40), nullable=True, unique=True)
+    result_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    result_description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)

@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     CLOUDINARY_CLOUD_NAME: str = ''
     CLOUDINARY_API_KEY: str = ''
     CLOUDINARY_API_SECRET: str = ''
+    MPESA_ENVIRONMENT: str = 'sandbox'
+    MPESA_CONSUMER_KEY: str = ''
+    MPESA_CONSUMER_SECRET: str = ''
+    MPESA_SHORTCODE: str = ''
+    MPESA_PASSKEY: str = ''
+    MPESA_CALLBACK_BASE_URL: str = ''
+    MPESA_TRANSACTION_TYPE: str = 'CustomerPayBillOnline'
+    SUBSCRIPTIONS_ENFORCED: bool = False
     API_V1_PREFIX: str = '/api/v1'
     model_config = SettingsConfigDict(
         env_file=PROJECT_ENV_FILES,

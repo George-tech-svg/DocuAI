@@ -1,7 +1,7 @@
 """Connect all API endpoint groups under the versioned API prefix."""
 
 from fastapi import APIRouter
-from app.api.v1.endpoints import health, auth, knowledge_bases, documents, chat
+from app.api.v1.endpoints import health, auth, knowledge_bases, documents, chat, admin, billing
 api_router = APIRouter()
-for module in (health, auth, knowledge_bases, documents, chat):
+for module in (health, auth, knowledge_bases, documents, chat, admin, billing):
     api_router.include_router(module.router)

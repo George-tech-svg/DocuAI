@@ -11,7 +11,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 from app.db.session import get_db
 from app.db.session import get_engine
-from app.api.dependencies import current_user
+from app.api.dependencies import current_user, subscribed_user
 from app.models.user import User
 from app.models.document import Document
 from app.models.conversation import Conversation
@@ -58,7 +58,7 @@ def _process_upload_in_worker(user_id, kb_id, document_id, filename: str, data: 
             return process_upload(worker_db, user_id, kb_id, filename, data, document_id=document_id)
 
 @router.post('', response_model=DocumentUploadResponse, status_code=201)
-async def upload(kb_id: UUID, background_tasks: BackgroundTasks, file: UploadFile=File(...), user: User=Depends(current_user), db: Session=Depends(get_db)):
+async def upload(kb_id: UUID, background_tasks: BackgroundTasks, file: UploadFile=File(...), user: User=Depends(subscribed_user), db: Session=Depends(get_db)):
     max_bytes = max_upload_mb() * 1_000_000
     data = await file.read(max_bytes + 1)
     if len(data) > max_bytes:

@@ -10,7 +10,7 @@ from starlette.concurrency import run_in_threadpool
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 from app.db.session import get_db, get_engine
-from app.api.dependencies import current_user
+from app.api.dependencies import current_user, subscribed_user
 from app.models.user import User
 from app.models.conversation import Conversation
 from app.models.message import Message
@@ -97,7 +97,7 @@ def _save_chat(user_id, knowledge_base_id, document_id, conversation_id, questio
         return conversation.id
 
 @router.post('/chat', response_model=ChatResponse)
-async def chat(data: ChatRequest, user: User=Depends(current_user)):
+async def chat(data: ChatRequest, user: User=Depends(subscribed_user)):
     started = perf_counter()
     try:
         if data.document_id is None:

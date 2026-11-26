@@ -53,6 +53,15 @@ export interface SavedChatMessage extends ChatMessage {
 
 export interface AuthenticationResponse {
   access_token: string;
+  user: UserProfile;
+}
+
+export interface UserProfile {
+  id: string;
+  full_name: string;
+  email: string;
+  is_active: boolean;
+  is_superuser: boolean;
 }
 
 export interface KnowledgeBaseListResponse {

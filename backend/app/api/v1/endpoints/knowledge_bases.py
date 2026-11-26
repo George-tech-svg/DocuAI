@@ -4,14 +4,14 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.api.dependencies import current_user
+from app.api.dependencies import current_user, subscribed_user
 from app.models.user import User
 from app.schemas.knowledge_base import KnowledgeBaseCreate, KnowledgeBaseUpdate, KnowledgeBaseResponse, KnowledgeBaseListResponse
 from app.services.knowledge_base_service import create_knowledge_base, list_knowledge_bases, get_knowledge_base, update_knowledge_base, delete_knowledge_base, KnowledgeBaseNotFoundError
 router = APIRouter(prefix='/knowledge-bases', tags=['Knowledge Bases'])
 
 @router.post('', response_model=KnowledgeBaseResponse, status_code=201)
-def create(data: KnowledgeBaseCreate, user: User=Depends(current_user), db: Session=Depends(get_db)):
+def create(data: KnowledgeBaseCreate, user: User=Depends(subscribed_user), db: Session=Depends(get_db)):
     return create_knowledge_base(db, user.id, data)
 
 @router.get('', response_model=KnowledgeBaseListResponse)

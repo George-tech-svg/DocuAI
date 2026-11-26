@@ -6,6 +6,8 @@ import {
   Archive,
   ChevronDown,
   ChevronRight,
+  CreditCard,
+  CreditCard,
   Download,
   HelpCircle,
   FileText,
@@ -26,6 +28,8 @@ import {
 
 import { getErrorMessage, request } from "./api";
 import AssistantMessage from "./AssistantMessage";
+import AdminDashboard from "./AdminDashboard";
+import BillingPage from "./BillingPage";
 import type {
   AuthenticationResponse,
   ChatMessage,
@@ -37,6 +41,7 @@ import type {
   KnowledgeBaseListResponse,
   ConversationRecord,
   SavedChatMessage,
+  UserProfile,
 } from "./types";
 
 type ItemAction = { label: string; icon: ReactNode; onClick: () => void; danger?: boolean };
@@ -111,6 +116,8 @@ export default function App() {
   const [token, setToken] = useState(
     localStorage.getItem("documind_token") ?? ""
   );
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [activePage, setActivePage] = useState<"workspace" | "admin" | "billing">("workspace");
   const [isRegistering, setIsRegistering] = useState(false);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -256,6 +263,15 @@ export default function App() {
   }, [token]);
 
   useEffect(() => {
+    if (!token) { setUserProfile(null); return; }
+    let cancelled = false;
+    void request<UserProfile>("/auth/me", token)
+      .then((profile) => { if (!cancelled) setUserProfile(profile); })
+      .catch((error) => { if (!cancelled) setErrorMessage(getErrorMessage(error)); });
+    return () => { cancelled = true; };
+  }, [token]);
+
+  useEffect(() => {
     void refreshDocuments();
     setMessages([]);
     setConversationId(null);
@@ -343,6 +359,8 @@ export default function App() {
     setConversationId(null);
     setConversationHistory([]);
     setIsMobileSidebarOpen(false);
+    setUserProfile(null);
+    setActivePage("workspace");
   }
 
   /** Start an empty conversation while keeping the selected folder and file. */
@@ -770,6 +788,9 @@ export default function App() {
     );
   }
 
+  if (activePage === "admin") return <AdminDashboard token={token} onBack={() => setActivePage("workspace")} />;
+  if (activePage === "billing") return <BillingPage token={token} onBack={() => setActivePage("workspace")} />;
+
   const selectedKnowledgeBase = knowledgeBases.find(
     (knowledgeBase) => knowledgeBase.id === selectedKnowledgeBaseId
   );
@@ -972,6 +993,14 @@ export default function App() {
 
         <div className="sidebottom">
           <div className="workspace-label"><ShieldCheck size={16} /> Private workspace</div>
+          <button type="button" onClick={() => { setActivePage("billing"); setIsMobileSidebarOpen(false); }}>
+            <CreditCard size={17} /> Plan &amp; billing
+          </button>
+          {userProfile?.is_superuser && (
+            <button type="button" onClick={() => { setActivePage("admin"); setIsMobileSidebarOpen(false); }}>
+              <ShieldCheck size={17} /> Admin console
+            </button>
+          )}
           <button onClick={handleLogout}>
             <LogOut size={17} /> Sign out
           </button>

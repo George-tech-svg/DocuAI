@@ -20,6 +20,7 @@ class UserResponse(BaseModel):
     full_name: str
     email: EmailStr
     is_active: bool
+    is_superuser: bool = False
     created_at: datetime
 
 class TokenResponse(BaseModel):
