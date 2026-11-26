@@ -69,8 +69,10 @@ Password-based and Google registrations require acceptance of the Terms of
 Service and Privacy Notice. Password registration confirms both password
 entries before it sends the account creation request. Google login and account
 creation are separate actions; to register a new Google account, switch to
-Create account and accept the terms first. `GOOGLE_CLIENT_ID` can be exposed
-as a Config value in Vercel; it is a public OAuth client ID, not a secret.
+Create account, set and confirm a password, then accept the terms. That lets
+the new account sign in with either Google or that password. `GOOGLE_CLIENT_ID`
+can be exposed as a Config value in Vercel; it is a public OAuth client ID, not
+a secret.
 
 The backend build preloads FastEmbed's ONNX model into `backend/model-cache`
 and validates that it can produce a 384-dimensional vector. The cache is inside

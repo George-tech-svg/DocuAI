@@ -18,17 +18,19 @@ declare global {
 
 const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "").trim();
 
-export default function GoogleSignIn({ mode, acceptedTerms, onCredential }: {
+export default function GoogleSignIn({ mode, acceptedTerms, password, passwordsMatch, onCredential }: {
   mode: GoogleMode;
   acceptedTerms: boolean;
-  onCredential: (credential: string, mode: GoogleMode, acceptedTerms: boolean) => void;
+  password: string;
+  passwordsMatch: boolean;
+  onCredential: (credential: string, mode: GoogleMode, acceptedTerms: boolean, password: string) => void;
 }) {
   const buttonRef = useRef<HTMLDivElement>(null);
-  const optionsRef = useRef({ mode, acceptedTerms, onCredential });
+  const optionsRef = useRef({ mode, acceptedTerms, password, onCredential });
   const [loadError, setLoadError] = useState("");
   const [clientId, setClientId] = useState(GOOGLE_CLIENT_ID);
-  const canUseGoogle = mode === "login" || acceptedTerms;
-  optionsRef.current = { mode, acceptedTerms, onCredential };
+  const canUseGoogle = mode === "login" || (acceptedTerms && passwordsMatch);
+  optionsRef.current = { mode, acceptedTerms, password, onCredential };
 
   useEffect(() => {
     if (clientId) return;
@@ -42,25 +44,32 @@ export default function GoogleSignIn({ mode, acceptedTerms, onCredential }: {
   useEffect(() => {
     if (!clientId || !canUseGoogle || !buttonRef.current) return;
     let cancelled = false;
+    let buttonCheckTimer: number | undefined;
     const callback = (response: GoogleCredential) => {
       if (response.credential) {
         const options = optionsRef.current;
-        options.onCredential(response.credential, options.mode, options.acceptedTerms);
+        options.onCredential(response.credential, options.mode, options.acceptedTerms, options.password);
       } else setLoadError("Google did not return a sign-in credential. Please try again.");
     };
     const renderButton = () => {
       if (cancelled || !buttonRef.current || !window.google) return;
-      window.google.accounts.id.initialize({
-        client_id: clientId,
-        callback,
-      });
-      window.google.accounts.id.renderButton(buttonRef.current, {
-        theme: "outline",
-        size: "large",
-        text: mode === "register" ? "signup_with" : "signin_with",
-        shape: "rectangular",
-        width: Math.min(400, Math.max(220, buttonRef.current.clientWidth)),
-      });
+      try {
+        window.google.accounts.id.initialize({ client_id: clientId, callback });
+        window.google.accounts.id.renderButton(buttonRef.current, {
+          theme: "outline",
+          size: "large",
+          text: mode === "register" ? "signup_with" : "signin_with",
+          shape: "rectangular",
+          width: Math.min(400, Math.max(220, buttonRef.current.clientWidth)),
+        });
+        buttonCheckTimer = window.setTimeout(() => {
+          if (!cancelled && buttonRef.current && !buttonRef.current.querySelector("iframe")) {
+            setLoadError("Google did not display its sign-in button. Check the authorized site origin in Google Cloud Console.");
+          }
+        }, 5000);
+      } catch {
+        setLoadError("Google sign-in could not initialize. Check the client ID and authorized site origin.");
+      }
     };
 
     if (window.google) {
@@ -79,17 +88,29 @@ export default function GoogleSignIn({ mode, acceptedTerms, onCredential }: {
       script.addEventListener("error", () => setLoadError("Google sign-in could not load. Check your connection and try again."), { once: true });
     }
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      if (buttonCheckTimer) window.clearTimeout(buttonCheckTimer);
+    };
   }, [clientId, canUseGoogle, mode]);
 
-  if (!clientId) return loadError ? <p className="muted google-config-message">{loadError}</p> : null;
+  if (!clientId) return (
+    <div className="google-signin-wrap">
+      <div className="auth-divider"><span>or</span></div>
+      <button className="google-signin-disabled" type="button" disabled>
+        {loadError || "Loading Google sign-in…"}
+      </button>
+    </div>
+  );
   return (
     <div className="google-signin-wrap">
       <div className="auth-divider"><span>or</span></div>
       <div className="google-signin-frame">
-        {canUseGoogle
+        {canUseGoogle && !loadError
           ? <div className="google-signin-button" ref={buttonRef} />
-          : <button className="google-signin-disabled" type="button" disabled>Accept Terms and Privacy to continue with Google</button>}
+          : <button className="google-signin-disabled" type="button" disabled>{loadError || (password && acceptedTerms
+            ? "Passwords must match to continue with Google"
+            : "Set and confirm a password, then accept Terms and Privacy to continue with Google")}</button>}
       </div>
       {loadError && <p className="error google-signin-error" role="alert">{loadError}</p>}
     </div>

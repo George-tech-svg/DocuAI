@@ -114,10 +114,12 @@ def google_login(data: GoogleLoginRequest, db: Session=Depends(get_db)):
             raise HTTPException(404, 'No account was found for this Google email. Choose Create account to register.')
         if not data.accept_terms:
             raise HTTPException(400, 'Accept the Terms of Service and Privacy Notice before creating your account.')
+        if not data.password:
+            raise HTTPException(400, 'Set and confirm a password before creating your Google account.')
         user = User(
             full_name=full_name,
             email=email,
-            password_hash=hash_password(secrets.token_urlsafe(48)),
+            password_hash=hash_password(data.password),
             is_verified=True,
         )
         db.add(user)

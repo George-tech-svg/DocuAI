@@ -397,7 +397,7 @@ export default function App() {
     }
   }
 
-  async function handleGoogleSignIn(credential: string, mode: "login" | "register", acceptedTerms: boolean) {
+  async function handleGoogleSignIn(credential: string, mode: "login" | "register", acceptedTerms: boolean, googlePassword: string) {
     if (mode === "register" && !acceptedTerms) {
       setErrorMessage("Accept the Terms of Service and Privacy Notice before creating your account.");
       return;
@@ -408,7 +408,7 @@ export default function App() {
     try {
       const response = await request<AuthenticationResponse>("/auth/google", "", {
         method: "POST",
-        body: JSON.stringify({ credential, mode, accept_terms: acceptedTerms }),
+        body: JSON.stringify({ credential, mode, accept_terms: acceptedTerms, password: mode === "register" ? googlePassword : undefined }),
       });
       localStorage.setItem("documind_token", response.access_token);
       setToken(response.access_token);
@@ -923,7 +923,9 @@ export default function App() {
           <GoogleSignIn
             mode={isRegistering ? "register" : "login"}
             acceptedTerms={hasAcceptedTerms}
-            onCredential={(credential, mode, accepted) => void handleGoogleSignIn(credential, mode, accepted)}
+            password={password}
+            passwordsMatch={password.length >= 4 && password === confirmPassword}
+            onCredential={(credential, mode, accepted, googlePassword) => void handleGoogleSignIn(credential, mode, accepted, googlePassword)}
           />
         )}
         <nav className="auth-legal-nav" aria-label="Legal information">
