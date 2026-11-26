@@ -14,6 +14,9 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+class GoogleLoginRequest(BaseModel):
+    credential: str = Field(min_length=20, max_length=8192)
+
 class AdminBootstrapRequest(BaseModel):
     full_name: str = Field(min_length=2, max_length=150)
     email: EmailStr

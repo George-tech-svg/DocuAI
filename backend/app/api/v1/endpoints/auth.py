@@ -3,11 +3,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 import secrets
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.api.dependencies import current_user
 from app.models.user import User
-from app.schemas.auth import UserRegister, UserLogin, AdminBootstrapRequest, UserResponse, AuthResponse
+from app.schemas.auth import UserRegister, UserLogin, GoogleLoginRequest, AdminBootstrapRequest, UserResponse, AuthResponse
 from app.services.auth_service import register_user, authenticate_user, EmailAlreadyRegisteredError, AuthenticationError
 from app.core.security import create_access_token
 from app.core.config import get_settings
@@ -67,6 +68,56 @@ def login(data: UserLogin, db: Session=Depends(get_db)):
         user = authenticate_user(db, data.email, data.password)
     except AuthenticationError:
         raise HTTPException(401, 'Invalid credentials')
+    return AuthResponse(user=UserResponse.model_validate(user), access_token=create_access_token(str(user.id)))
+
+@router.post('/google', response_model=AuthResponse)
+def google_login(data: GoogleLoginRequest, db: Session=Depends(get_db)):
+    """Verify a Google ID token and create or sign in to the matching account."""
+    settings = get_settings()
+    if not settings.GOOGLE_CLIENT_ID:
+        raise HTTPException(503, 'Google sign-in is not configured.')
+
+    try:
+        from google.auth.exceptions import GoogleAuthError
+        from google.auth.transport.requests import Request as GoogleRequest
+        from google.oauth2 import id_token
+
+        identity = id_token.verify_oauth2_token(
+            data.credential, GoogleRequest(), audience=settings.GOOGLE_CLIENT_ID
+        )
+    except (ValueError, GoogleAuthError):
+        raise HTTPException(401, 'Google could not verify this sign-in. Please try again.')
+
+    email = str(identity.get('email', '')).strip().lower()
+    full_name = str(identity.get('name') or email.split('@', 1)[0]).strip()[:150]
+    if not identity.get('sub') or not email or not identity.get('email_verified'):
+        raise HTTPException(401, 'Google did not provide a verified email address.')
+
+    user = db.scalar(select(User).where(User.email == email).with_for_update())
+    if user is not None:
+        if not user.is_active:
+            raise HTTPException(403, 'This account is disabled. Contact support for help.')
+        user.is_verified = True
+        db.commit()
+        db.refresh(user)
+    else:
+        user = User(
+            full_name=full_name,
+            email=email,
+            password_hash=hash_password(secrets.token_urlsafe(48)),
+            is_verified=True,
+        )
+        db.add(user)
+        try:
+            db.commit()
+            db.refresh(user)
+        except IntegrityError:
+            # Another simultaneous Google sign-in may have created the same email.
+            db.rollback()
+            user = db.scalar(select(User).where(User.email == email))
+            if user is None or not user.is_active:
+                raise HTTPException(409, 'Could not finish creating this Google account. Please try again.')
+
     return AuthResponse(user=UserResponse.model_validate(user), access_token=create_access_token(str(user.id)))
 
 @router.get('/me', response_model=UserResponse)

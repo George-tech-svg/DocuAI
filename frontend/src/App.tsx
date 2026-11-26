@@ -32,6 +32,7 @@ import AssistantMessage from "./AssistantMessage";
 import AdminDashboard from "./AdminDashboard";
 import BillingPage from "./BillingPage";
 import TermsPrivacy from "./TermsPrivacy";
+import GoogleSignIn from "./GoogleSignIn";
 import type {
   AuthenticationResponse,
   ChatMessage,
@@ -375,6 +376,25 @@ export default function App() {
       setToken(response.access_token);
       setPassword("");
       setAdminSetupCode("");
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleGoogleSignIn(credential: string) {
+    setIsBusy(true);
+    setBusyMessage("Signing you in with Google...");
+    setErrorMessage("");
+    try {
+      const response = await request<AuthenticationResponse>("/auth/google", "", {
+        method: "POST",
+        body: JSON.stringify({ credential }),
+      });
+      localStorage.setItem("documind_token", response.access_token);
+      setToken(response.access_token);
+      setPassword("");
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -846,6 +866,7 @@ export default function App() {
             </button>
           </p>
         </form>}
+        {!showAdminBootstrap && <GoogleSignIn onCredential={(credential) => void handleGoogleSignIn(credential)} />}
         <nav className="auth-legal-nav" aria-label="Legal information">
           <button type="button" onClick={() => openLegalPage("terms")}>Terms of service</button>
           <span aria-hidden="true">·</span>

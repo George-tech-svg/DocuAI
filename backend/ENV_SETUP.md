@@ -30,6 +30,8 @@ Required backend variables:
 - `MAX_UPLOAD_MB`: application-level limit, capped by the app at 20 MB.
 - `MAX_EXTRACTED_CHARS`: extracted text limit, capped at 5,000,000.
 - `DEEPSEEK_MODEL`: optional; defaults to `deepseek-flash`.
+- `GOOGLE_CLIENT_ID`: Google OAuth 2.0 Web application client ID used by the
+  backend to verify Google ID tokens. It is not a client secret.
 - `API_V1_PREFIX`: defaults to `/api/v1`.
 - `MPESA_ENVIRONMENT`: optional; `sandbox` by default, or `production` after
   Safaricom has enabled the Daraja product for the shortcode.
@@ -47,6 +49,20 @@ Required backend variables:
 existing environment file for continuity; the API currently uses its own
 application metadata defaults. No frontend API URL is needed for the shared
 domain.
+
+## Google sign-in
+
+Create an OAuth 2.0 Client ID of type **Web application** in Google Cloud
+Console, configure the consent screen, and add the production site origin
+(`https://docuai-jet.vercel.app`) under Authorized JavaScript origins. Add
+`http://localhost:5173` for local Vite development. Set the same client ID in
+backend `GOOGLE_CLIENT_ID` and frontend build variable `VITE_GOOGLE_CLIENT_ID`.
+The client ID is public; do not put a client secret in the frontend. The
+backend verifies Google's signed ID token and verified email before creating
+or signing into a database account. The Google button stays hidden until the
+frontend client ID is configured. Add `VITE_GOOGLE_CLIENT_ID` to Vercel's
+frontend build environment and `GOOGLE_CLIENT_ID` to the backend environment,
+then redeploy both services.
 
 The backend build preloads FastEmbed's ONNX model into `backend/model-cache`
 and validates that it can produce a 384-dimensional vector. The cache is inside

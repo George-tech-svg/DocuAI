@@ -30,6 +30,11 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .auth-toggle { background: none; border: 0; color: inherit; cursor: pointer; text-decoration: underline; padding: 0; }
 .auth-legal-nav { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 17px; color: #607687; font-size: 12px; }
 .auth-legal-nav button, .sidebar-legal-links button { border: 0; padding: 5px 2px; background: transparent; color: #286fa9; text-decoration: underline; }
+.google-signin-wrap { width: min(430px, 92vw); }
+.auth-divider { display: flex; align-items: center; gap: 12px; margin: 17px 0; color: #758791; font-size: 12px; }
+.auth-divider::before, .auth-divider::after { height: 1px; flex: 1; background: #d1dce0; content: ""; }
+.google-signin-button { display: flex; justify-content: center; min-height: 40px; }
+.google-signin-error { margin: 8px 0 0; text-align: center; font-size: 12px; }
 
 /* The requested blue workspace and the two-panel chat layout. */
 :root { color: #24394b; background: #007bff; }

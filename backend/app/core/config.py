@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     MPESA_TRANSACTION_TYPE: str = 'CustomerPayBillOnline'
     SUBSCRIPTIONS_ENFORCED: bool = False
     ADMIN_BOOTSTRAP_CODE: str = ''
+    GOOGLE_CLIENT_ID: str = ''
     API_V1_PREFIX: str = '/api/v1'
     model_config = SettingsConfigDict(
         env_file=PROJECT_ENV_FILES,
