@@ -107,7 +107,11 @@ body { overflow: hidden; }
 }
 
 .shell { display: flex; width: 100%; height: 100dvh; min-height: 0; overflow: hidden; background: #e7f0e8; }
-aside { flex: 0 0 285px; width: 285px; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; background: #f0f3eb; border-right: 1px solid #d1dfd2; padding: 26px 18px; display: flex; flex-direction: column; gap: 18px; }
+aside { flex: 0 0 var(--sidebar-width, 285px); width: var(--sidebar-width, 285px); min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; background: #f0f3eb; border-right: 1px solid #d1dfd2; padding: 26px 18px; display: flex; flex-direction: column; gap: 18px; }
+.workspace-resizer { position: relative; z-index: 3; flex: 0 0 8px; width: 8px; cursor: col-resize; touch-action: none; background: transparent; }
+.workspace-resizer::after { position: absolute; inset: 0 3px; content: ""; border-radius: 4px; background: #bfd0dc; transition: background 120ms ease; }
+.workspace-resizer:hover::after, .workspace-resizer:focus-visible::after { background: #327fc1; }
+.workspace-resizer:focus-visible { outline: 2px solid #1e6092; outline-offset: -2px; }
 aside .brand { padding: 6px; }
 .smalltitle { font-size: 11px; font-weight: 800; color: #75877a; letter-spacing: 1.4px; margin-top: 14px; }
 .newkb { display: flex; gap: 7px; }
@@ -197,6 +201,7 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
 .mobile-topbar, .sidebar-backdrop, .sidebar-close { display: none; }
 
 @media (max-width: 900px) {
+  .workspace-resizer { display: none; }
   .shell { flex-direction: column; }
   aside { flex: 0 0 auto; width: 100%; max-height: 34dvh; padding: 12px 16px; gap: 8px; }
   aside .brand { font-size: 19px; }
@@ -421,6 +426,10 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
 .folder-tree .document-tree-row .folder-file-row { flex: 1; width: auto; min-width: 0; }
 .document-chat-list { margin: 1px 0 6px 21px; padding: 3px 0 4px 7px; border-left: 1px solid #c6d7dc; }
 .document-chat-list .history-open { padding-top: 6px; padding-bottom: 6px; font-size: 11px; }
+.document-chat-list .history-row { display: flex; align-items: center; width: 100%; min-width: 0; }
+.document-chat-list .history-row .history-open { flex: 1 1 0; width: 0; max-width: none; min-width: 0; }
+.document-chat-list .history-row .item-menu-wrap { flex: 0 0 auto; }
+.document-chat-list .history-row .item-menu-trigger { flex: 0 0 36px; width: 36px; height: 36px; }
 .document-chat-list .history-empty { font-size: 10px; }
 .document-tree-node:has(.folder-file-row.selected) > .document-chat-list { border-left-color: #327fc1; }
 .item-menu-wrap { display: flex; flex: 0 0 auto; align-items: center; }
@@ -615,31 +624,27 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
   .shell > aside .sidebottom button { width: 100%; }
 }
 
-/* Warm, high-contrast phone layout with room for long file names and controls. */
+/* Keep the phone workspace on the same blue, sage, and soft neutral palette as desktop. */
 @media (max-width: 700px) {
-  :root, html, body, #root, .shell, main { background-color: #f0e2bf; }
-
-  .mobile-topbar,
-  .shell > aside {
-    background-color: #f2e6c9;
-    background-image:
-      linear-gradient(45deg, transparent 49%, rgb(168 137 77 / 8%) 50%, transparent 51%),
-      linear-gradient(-45deg, transparent 49%, rgb(168 137 77 / 8%) 50%, transparent 51%);
-    background-size: 48px 48px;
-  }
-
+  :root, html, body, #root, .shell, main { background: #007bff; }
+  .mobile-topbar { background: #e4edf2; }
+  .shell > aside { background: #f0f3eb; background-image: none; }
   .shell > main > .chat {
-    background: #f8efd9;
-    border-color: #dfd0aa;
+    background: #f1f4f1;
+    border-color: #c8d6df;
   }
-
-  .chat > .composer { background: #f8efd9; border-top-color: #e5d8b9; }
-  .composer input { background: #fcf7eb; border-color: #ddcfad; }
+  .chat > .composer { background: #f1f4f1; border-top-color: #d7e0e2; }
+  .composer input { background: #f7f8f5; border-color: #c8d6df; }
 
   .shell > aside .folder-tree-row,
   .shell > aside .document-tree-row { overflow: visible; }
 
   .shell > aside .folder-select span { white-space: normal; overflow-wrap: anywhere; }
+  .shell > aside nav .document-chat-list .history-row { width: 100%; min-width: 0; gap: 2px; }
+  .shell > aside nav .document-chat-list .history-row .history-open { flex: 1 1 0; width: 0; max-width: none; min-width: 0; overflow: hidden; }
+  .shell > aside nav .document-chat-list .history-row .history-open span { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .shell > aside nav .document-chat-list .history-row .item-menu-wrap { flex: 0 0 40px; width: 40px; }
+  .shell > aside nav .document-chat-list .history-row .item-menu-trigger { flex: 0 0 40px; width: 40px; min-height: 40px; }
 }
 
 @media (max-width: 480px) {

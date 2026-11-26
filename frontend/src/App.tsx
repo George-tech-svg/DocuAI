@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { ChangeEvent, FormEvent, ReactNode } from "react";
+import type { ChangeEvent, CSSProperties, FormEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   BookOpen,
@@ -126,6 +126,10 @@ export default function App() {
   const [folderDocuments, setFolderDocuments] = useState<Record<string, { items: DocumentRecord[]; loading: boolean; error: string }>>({});
   const [isUploadPanelOpen, setIsUploadPanelOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const savedWidth = Number(localStorage.getItem("documind_sidebar_width"));
+    return Number.isFinite(savedWidth) && savedWidth >= 240 && savedWidth <= 560 ? savedWidth : 285;
+  });
   const [openItemMenuId, setOpenItemMenuId] = useState<string | null>(null);
   const [isHelpPanelOpen, setIsHelpPanelOpen] = useState(false);
   const [newKnowledgeBaseName, setNewKnowledgeBaseName] = useState("");
@@ -143,6 +147,8 @@ export default function App() {
   const [isBusy, setIsBusy] = useState(false);
   const [busyMessage, setBusyMessage] = useState("Processing...");
   const [errorMessage, setErrorMessage] = useState("");
+
+  useEffect(() => { localStorage.setItem("documind_sidebar_width", String(sidebarWidth)); }, [sidebarWidth]);
 
   /** Load the current user's knowledge bases from the API. */
   async function refreshKnowledgeBases() {
@@ -801,7 +807,10 @@ export default function App() {
         />
       )}
 
-      <aside className={isMobileSidebarOpen ? "mobile-sidebar-open" : ""}>
+      <aside
+        className={isMobileSidebarOpen ? "mobile-sidebar-open" : ""}
+        style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+      >
         <div className="brand">
           <BookOpen /> DocuMind <span>AI</span>
         </div>
@@ -968,6 +977,29 @@ export default function App() {
           </button>
         </div>
       </aside>
+
+      <div
+        className="workspace-resizer"
+        role="separator"
+        aria-label="Resize folder sidebar and chat area"
+        aria-orientation="vertical"
+        aria-valuemin={240}
+        aria-valuemax={Math.max(240, Math.min(560, window.innerWidth - 360))}
+        aria-valuenow={sidebarWidth}
+        tabIndex={0}
+        title="Drag to resize the folder sidebar"
+        onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); }}
+        onPointerMove={(event) => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            setSidebarWidth(Math.max(240, Math.min(Math.min(560, window.innerWidth - 360), event.clientX)));
+          }
+        }}
+        onPointerUp={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft") setSidebarWidth((width) => Math.max(240, width - 20));
+          if (event.key === "ArrowRight") setSidebarWidth((width) => Math.min(Math.min(560, window.innerWidth - 360), width + 20));
+        }}
+      />
 
       <main>
         <section className="chat">
