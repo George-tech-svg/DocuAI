@@ -35,6 +35,8 @@ html, body, #root, .shell, main { background: #007bff; }
 .brand { color: #24465f; }
 .brand span { color: #2876b8; }
 .auth-wrap { background: #4a90e2; }
+.admin-setup-dot { position: fixed; z-index: 5; top: 4px; right: 4px; width: 9px; height: 9px; min-width: 0; padding: 0; border: 0; border-radius: 50%; background: #17242b; opacity: .72; cursor: pointer; }
+.admin-setup-dot:hover, .admin-setup-dot:focus-visible { opacity: 1; outline: 2px solid #327fc1; outline-offset: 3px; }
 .auth-card { background: #f2f5f2; border-color: #c8d6df; }
 .auth-card input, .newkb input, .composer input { background: #f7f8f5; border-color: #c8d6df; color: #24394b; }
 .auth-card button, .newkb button, .composer button { background: #327fc1; color: #fff; }

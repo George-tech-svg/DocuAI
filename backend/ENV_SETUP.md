@@ -79,10 +79,16 @@ as folder-level chats.
 
 ## Platform administration and billing
 
-After creating the owner account, promote it from the `backend` directory with
-`python scripts/promote_admin.py owner@example.com`. This command only promotes
-an existing account and never accepts administrator status from public
-registration. Sign out and back in to load the Admin console.
+To register the first super administrator, set `ADMIN_BOOTSTRAP_CODE` to a
+random private value of at least 16 characters in the backend environment.
+The sign-in page then shows a tiny setup dot while no super administrator
+exists. Open it, enter the private code, and register the first admin account.
+The endpoint serializes setup requests and permanently closes after the first
+super administrator is created. Keep this code out of frontend `VITE_*`
+variables and rotate or remove it after setup. Normal public registration
+cannot assign administrator privileges. `scripts/promote_admin.py` is a
+restricted operational fallback and refuses to promote a second administrator.
+Sign out and back in to load the Admin console.
 
 Create one or more monthly plans in Admin → Plans. Monthly M-Pesa prompts are
 sent only after the Daraja server credentials and shortcode are configured in

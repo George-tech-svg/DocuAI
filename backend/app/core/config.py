@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     MPESA_CALLBACK_BASE_URL: str = ''
     MPESA_TRANSACTION_TYPE: str = 'CustomerPayBillOnline'
     SUBSCRIPTIONS_ENFORCED: bool = False
+    ADMIN_BOOTSTRAP_CODE: str = ''
     API_V1_PREFIX: str = '/api/v1'
     model_config = SettingsConfigDict(
         env_file=PROJECT_ENV_FILES,

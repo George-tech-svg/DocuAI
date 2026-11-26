@@ -122,6 +122,18 @@ export default function App() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [adminBootstrapAvailable, setAdminBootstrapAvailable] = useState(false);
+  const [showAdminBootstrap, setShowAdminBootstrap] = useState(false);
+  const [adminSetupCode, setAdminSetupCode] = useState("");
+
+  useEffect(() => {
+    if (token) return;
+    let cancelled = false;
+    void request<{ available: boolean }>("/auth/admin/bootstrap/status", "")
+      .then((status) => { if (!cancelled) setAdminBootstrapAvailable(status.available); })
+      .catch(() => { if (!cancelled) setAdminBootstrapAvailable(false); });
+    return () => { cancelled = true; };
+  }, [token]);
 
   // Knowledge bases and documents in the selected workspace.
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
@@ -338,6 +350,28 @@ export default function App() {
       localStorage.setItem("documind_token", response.access_token);
       setToken(response.access_token);
       setPassword("");
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleAdminBootstrap(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsBusy(true);
+    setBusyMessage("Creating the first administrator...");
+    setErrorMessage("");
+    try {
+      const response = await request<AuthenticationResponse>("/auth/admin/bootstrap", "", {
+        method: "POST",
+        body: JSON.stringify({ full_name: fullName, email, password, setup_code: adminSetupCode }),
+      });
+      localStorage.setItem("documind_token", response.access_token);
+      setAdminBootstrapAvailable(false);
+      setToken(response.access_token);
+      setPassword("");
+      setAdminSetupCode("");
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -710,7 +744,21 @@ export default function App() {
   if (!token) {
     return (
       <div className="auth-wrap">
-        <form className="auth-card" onSubmit={handleAuthentication}>
+        {adminBootstrapAvailable && <button className="admin-setup-dot" type="button" aria-label="Open one-time administrator setup" title="Administrator setup" onClick={() => { setShowAdminBootstrap(true); setErrorMessage(""); }} />}
+        {showAdminBootstrap && adminBootstrapAvailable ? (
+        <form className="auth-card" onSubmit={handleAdminBootstrap}>
+          <div className="brand"><BookOpen /> DocuMind <span>AI</span></div>
+          <h1>First administrator setup</h1>
+          <p>This one-time setup is available until the first super administrator is registered.</p>
+          <input required minLength={2} maxLength={150} placeholder="Full name" value={fullName} onChange={(event) => setFullName(event.target.value)} />
+          <input type="email" required placeholder="Email address" value={email} onChange={(event) => setEmail(event.target.value)} />
+          <input type="password" required minLength={8} maxLength={128} autoComplete="new-password" placeholder="Password (at least 8 characters)" value={password} onChange={(event) => setPassword(event.target.value)} />
+          <input type="password" required minLength={16} maxLength={256} autoComplete="off" placeholder="Private setup code" value={adminSetupCode} onChange={(event) => setAdminSetupCode(event.target.value)} />
+          {errorMessage && <p className="error">{errorMessage}</p>}
+          <button disabled={isBusy}>{isBusy ? "Please wait..." : "Register first administrator"}</button>
+          <p><button type="button" className="auth-toggle" onClick={() => { setShowAdminBootstrap(false); setErrorMessage(""); }}>Back to sign in</button></p>
+        </form>
+        ) : <form className="auth-card" onSubmit={handleAuthentication}>
           <div className="brand">
             <BookOpen /> DocuMind <span>AI</span>
           </div>
@@ -783,7 +831,7 @@ export default function App() {
                 : "New here? Create an account"}
             </button>
           </p>
-        </form>
+        </form>}
       </div>
     );
   }
