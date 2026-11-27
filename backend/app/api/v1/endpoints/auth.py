@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 import secrets
+import logging
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -14,6 +15,7 @@ from app.core.security import create_access_token
 from app.core.config import get_settings
 from app.core.security import hash_password, verify_password
 router = APIRouter(prefix='/auth', tags=['Authentication'])
+logger = logging.getLogger(__name__)
 
 @router.get('/google/config')
 def google_sign_in_config():
@@ -92,15 +94,17 @@ def google_login(data: GoogleLoginRequest, db: Session=Depends(get_db)):
         raise HTTPException(503, 'Google sign-in is not configured.')
 
     try:
-        from google.auth.exceptions import GoogleAuthError
         from google.auth.transport.requests import Request as GoogleRequest
         from google.oauth2 import id_token
 
         identity = id_token.verify_oauth2_token(
             data.credential, GoogleRequest(), audience=client_id
         )
-    except (ValueError, GoogleAuthError):
+    except ValueError:
         raise HTTPException(401, 'Google could not verify this sign-in. Please try again.')
+    except Exception as exc:
+        logger.exception('Unexpected failure while verifying a Google sign-in')
+        raise HTTPException(503, 'Google sign-in could not reach the verification service. Please try again later.') from exc
 
     email = str(identity.get('email', '')).strip().lower()
     full_name = str(identity.get('name') or email.split('@', 1)[0]).strip()[:150]
@@ -140,7 +144,14 @@ def google_login(data: GoogleLoginRequest, db: Session=Depends(get_db)):
                 db.refresh(user)
     except SQLAlchemyError as exc:
         db.rollback()
+        logger.exception('Database error while creating or linking a Google account')
         raise HTTPException(503, 'Google sign-in could not access the account database. Check the backend database connection and migrations, then try again.') from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        logger.exception('Unexpected failure while creating or linking a Google account')
+        raise HTTPException(503, 'Google sign-in could not finish creating or linking this account. Please try again later.') from exc
 
     return AuthResponse(user=UserResponse.model_validate(user), access_token=create_access_token(str(user.id)))
 
