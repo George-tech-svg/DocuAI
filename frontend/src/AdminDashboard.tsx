@@ -29,6 +29,7 @@ export default function AdminDashboard({ token, onBack }: { token: string; onBac
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -37,6 +38,7 @@ export default function AdminDashboard({ token, onBack }: { token: string; onBac
 
   async function load(nextTab = tab) {
     setError("");
+    setLoading(true);
     try {
       if (nextTab === "overview") setOverview(await request<Overview>("/admin/overview", token));
       if (nextTab === "members") setMembers(await request<Member[]>("/admin/members", token));
@@ -44,6 +46,7 @@ export default function AdminDashboard({ token, onBack }: { token: string; onBac
       if (nextTab === "subscriptions") setSubscriptions(await request<Subscription[]>("/admin/subscriptions", token));
       if (nextTab === "payments") setPayments(await request<Payment[]>("/admin/payments", token));
     } catch (e) { setError(getErrorMessage(e)); }
+    finally { setLoading(false); }
   }
 
   useEffect(() => { void load(tab); }, [tab, token]);
@@ -71,13 +74,14 @@ export default function AdminDashboard({ token, onBack }: { token: string; onBac
         <div><span>PLATFORM MANAGEMENT</span><h1>Admin console</h1></div>
       </header>
       <nav className="admin-tabs" aria-label="Administration sections">
-        {tabs.map(({ id, label, icon: Icon }) => <button type="button" key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}><Icon size={17} />{label}</button>)}
+        {tabs.map(({ id, label, icon: Icon }) => <button type="button" key={id} className={tab === id ? "active" : ""} aria-current={tab === id ? "page" : undefined} onClick={() => setTab(id)}><Icon size={17} />{label}</button>)}
       </nav>
-      {error && <div className="admin-error" role="alert">{error}</div>}
+      {error && <div className="admin-error" role="alert">{error}<button className="admin-secondary" type="button" onClick={() => void load()} disabled={loading}>Try again</button></div>}
+      {loading && <div className="admin-note" role="status" aria-live="polite">Loading {tabs.find((item) => item.id === tab)?.label.toLowerCase()}…</div>}
       <main className="admin-content">
         {tab === "overview" && (
           <>
-            <div className="admin-section-heading"><div><h2>Platform overview</h2><p>Members, paid access, and M-Pesa collection activity.</p></div><button className="admin-secondary" onClick={() => void load()}>Refresh</button></div>
+            <div className="admin-section-heading"><div><h2>Platform overview</h2><p>Members, paid access, and M-Pesa collection activity.</p></div><button className="admin-secondary" disabled={loading} onClick={() => void load()}>{loading ? "Refreshing…" : "Refresh"}</button></div>
             <div className="admin-stats">
               {[["Members", overview?.members_total], ["Active members", overview?.members_active], ["Active subscriptions", overview?.subscriptions_active], ["Expiring this week", overview?.subscriptions_expiring], ["Payments awaiting review", overview?.payments_pending], ["Confirmed revenue", overview ? money(overview.revenue_kes) : undefined], ["M-Pesa setup", overview ? (overview.mpesa_ready ? "Ready" : "Needs setup") : undefined]].map(([label, value]) => <article className="admin-stat" key={String(label)}><span>{label}</span><strong>{value ?? "—"}</strong></article>)}
             </div>
@@ -86,7 +90,7 @@ export default function AdminDashboard({ token, onBack }: { token: string; onBac
         )}
         {tab === "members" && <>
           <div className="admin-section-heading"><div><h2>Members</h2><p>Review accounts and control workspace access.</p></div></div>
-          <div className="admin-list">{members.map((member) => <article className="admin-row" key={member.id}><div className="admin-row-main"><strong>{member.full_name}{member.is_superuser && <span className="admin-tag">Admin</span>}</strong><span>{member.email}</span><small>{member.current_plan ?? "No plan"} · {member.subscription_status ?? "No subscription"}{member.expires_at ? ` · expires ${date(member.expires_at)}` : ""}</small></div><button className="admin-secondary" disabled={busy || member.is_superuser} onClick={() => void mutate(`/admin/members/${member.id}`, "PATCH", { is_active: !member.is_active })}>{member.is_active ? "Disable" : "Enable"}</button></article>)}{members.length === 0 && <p className="admin-note">No members found.</p>}</div>
+          <div className="admin-list">{members.map((member) => <article className="admin-row" key={member.id}><div className="admin-row-main"><strong>{member.full_name}{member.is_superuser && <span className="admin-tag">Admin</span>}</strong><span>{member.email}</span><small>{member.current_plan ?? "No plan"} · {member.subscription_status ?? "No subscription"}{member.expires_at ? ` · expires ${date(member.expires_at)}` : ""}</small></div><button className="admin-secondary" disabled={busy || member.is_superuser} onClick={() => void mutate(`/admin/members/${member.id}`, "PATCH", { is_active: !member.is_active })}>{member.is_active ? "Disable" : "Enable"}</button></article>)}{!loading && members.length === 0 && <p className="admin-note">No members found.</p>}</div>
         </>}
         {tab === "plans" && <>
           <div className="admin-section-heading"><div><h2>Subscription plans</h2><p>Set the monthly price and duration members will pay by M-Pesa.</p></div></div>
@@ -101,11 +105,11 @@ export default function AdminDashboard({ token, onBack }: { token: string; onBac
         </>}
         {tab === "subscriptions" && <>
           <div className="admin-section-heading"><div><h2>Subscriptions</h2><p>Current and previous membership periods.</p></div></div>
-          <div className="admin-list">{subscriptions.map((subscription) => <article className="admin-row" key={subscription.id}><div className="admin-row-main"><strong>{subscription.full_name} · {subscription.plan_name}</strong><span>{subscription.email} · {money(subscription.price_kes)}</span><small>{subscription.status} · expires {date(subscription.expires_at)}</small></div>{subscription.status === "active" && <button className="admin-secondary" disabled={busy} onClick={() => void mutate(`/admin/subscriptions/${subscription.id}`, "PATCH", { status: "cancelled" })}>Cancel</button>}</article>)}{subscriptions.length === 0 && <p className="admin-note">No subscriptions yet.</p>}</div>
+          <div className="admin-list">{subscriptions.map((subscription) => <article className="admin-row" key={subscription.id}><div className="admin-row-main"><strong>{subscription.full_name} · {subscription.plan_name}</strong><span>{subscription.email} · {money(subscription.price_kes)}</span><small>{subscription.status} · expires {date(subscription.expires_at)}</small></div>{subscription.status === "active" && <button className="admin-secondary" disabled={busy} onClick={() => void mutate(`/admin/subscriptions/${subscription.id}`, "PATCH", { status: "cancelled" })}>Cancel</button>}</article>)}{!loading && subscriptions.length === 0 && <p className="admin-note">No subscriptions yet.</p>}</div>
         </>}
         {tab === "payments" && <>
           <div className="admin-section-heading"><div><h2>M-Pesa payments</h2><p>Payment requests and confirmed receipts.</p></div></div>
-          <div className="admin-list">{payments.map((payment) => <article className="admin-row" key={payment.id}><div className="admin-row-main"><strong>{payment.full_name} · {money(payment.amount_kes)}</strong><span>{payment.email} · {payment.phone_number}</span><small>{payment.status}{payment.mpesa_receipt ? ` · receipt ${payment.mpesa_receipt}` : ""}{payment.result_description ? ` · ${payment.result_description}` : ""}</small></div><time>{date(payment.created_at)}</time></article>)}{payments.length === 0 && <p className="admin-note">No M-Pesa payments yet.</p>}</div>
+          <div className="admin-list">{payments.map((payment) => <article className="admin-row" key={payment.id}><div className="admin-row-main"><strong>{payment.full_name} · {money(payment.amount_kes)}</strong><span>{payment.email} · {payment.phone_number}</span><small>{payment.status}{payment.mpesa_receipt ? ` · receipt ${payment.mpesa_receipt}` : ""}{payment.result_description ? ` · ${payment.result_description}` : ""}</small></div><time>{date(payment.created_at)}</time></article>)}{!loading && payments.length === 0 && <p className="admin-note">No M-Pesa payments yet.</p>}</div>
         </>}
       </main>
     </div>

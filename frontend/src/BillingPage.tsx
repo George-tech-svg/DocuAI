@@ -12,10 +12,12 @@ export default function BillingPage({ token, onBack }: { token: string; onBack: 
   const [phone, setPhone] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
   const [busyPlanId, setBusyPlanId] = useState("");
 
   async function refresh() {
     setError("");
+    setLoading(true);
     try {
       const [availablePlans, current] = await Promise.all([
         request<Plan[]>("/billing/plans", token),
@@ -24,6 +26,7 @@ export default function BillingPage({ token, onBack }: { token: string; onBack: 
       setPlans(availablePlans);
       setBilling(current);
     } catch (e) { setError(getErrorMessage(e)); }
+    finally { setLoading(false); }
   }
 
   useEffect(() => { void refresh(); }, [token]);
@@ -46,20 +49,21 @@ export default function BillingPage({ token, onBack }: { token: string; onBack: 
       <header className="admin-header">
         <button className="admin-back" type="button" onClick={onBack}><ArrowLeft size={17} /> Workspace</button>
         <div><span>YOUR ACCOUNT</span><h1>Plan &amp; billing</h1></div>
-        <button className="admin-secondary" type="button" onClick={() => void refresh()}><RefreshCw size={15} /> Refresh</button>
+        <button className="admin-secondary" type="button" disabled={loading} onClick={() => void refresh()}><RefreshCw size={15} />{loading ? "Loading…" : "Refresh"}</button>
       </header>
-      {error && <div className="admin-error" role="alert">{error}</div>}
+      {error && <div className="admin-error" role="alert">{error}<button className="admin-secondary" type="button" onClick={() => void refresh()} disabled={loading}>Try again</button></div>}
+      {loading && <div className="admin-note" role="status" aria-live="polite">Loading your plan and payment details…</div>}
       {message && <div className="billing-message" role="status"><CheckCircle2 size={17} />{message}</div>}
       <main className="admin-content">
         <section className="billing-current">
           <div><span>Current access</span><h2>{billing?.subscription?.plan_name ?? "No active plan"}</h2></div>
           <p>{billing?.subscription ? `${billing.subscription.status}${billing.subscription.expires_at ? ` · valid through ${new Date(billing.subscription.expires_at).toLocaleDateString()}` : ""}` : "Choose a plan below to start using DocuMind AI."}</p>
         </section>
-        {!billing?.mpesa_ready && <div className="admin-note">M-Pesa checkout is not enabled yet. The platform administrator needs to finish Daraja configuration before members can pay.</div>}
+        {!loading && billing && !billing.mpesa_ready && <div className="admin-note">M-Pesa checkout is not enabled yet. The platform administrator needs to finish Daraja configuration before members can pay.</div>}
         <div className="admin-section-heading"><div><h2>Monthly plans</h2><p>Enter your M-Pesa number, choose a plan, then tap Pay with M-Pesa. A payment prompt will be sent to your phone to approve. Access starts after payment is confirmed.</p></div></div>
         <label className="billing-phone">M-Pesa phone number<input inputMode="tel" autoComplete="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="0712 345 678" /></label>
         <div className="billing-plan-list">{plans.map((plan) => <article className="admin-plan-card" key={plan.id}><div><strong>{plan.name}</strong><p>{plan.description}</p><b>KSh {plan.price_kes.toLocaleString()} <small>/ {plan.duration_days} days</small></b></div><form onSubmit={(event) => void startPayment(event, plan.id)}><button className="admin-primary" type="submit" disabled={!billing?.mpesa_ready || !phone.trim() || !!busyPlanId}><CreditCard size={16} />{busyPlanId === plan.id ? "Sending prompt…" : "Pay with M-Pesa"}</button></form></article>)}</div>
-        {plans.length === 0 && <p className="admin-note">No subscription plans are available yet.</p>}
+        {!loading && plans.length === 0 && <p className="admin-note">No subscription plans are available yet.</p>}
         <div className="admin-section-heading"><div><h2>Recent payments</h2><p>Pending prompts are not treated as successful payments.</p></div></div>
         <div className="admin-list">{billing?.payments.map((payment) => <article className="admin-row" key={payment.id}><div className="admin-row-main"><strong>KSh {payment.amount_kes.toLocaleString()} · {payment.status}</strong><small>{payment.mpesa_receipt ? `M-Pesa receipt ${payment.mpesa_receipt}` : payment.result_description || "Awaiting M-Pesa confirmation"}</small></div><time>{new Date(payment.created_at).toLocaleDateString()}</time></article>)}</div>
       </main>
