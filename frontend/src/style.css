@@ -61,9 +61,14 @@ html, body, #root, .shell, main { background: #007bff; }
 .brand { color: #24465f; }
 .brand span { color: #2876b8; }
 .auth-wrap { background: #4a90e2; }
-.auth-admin-actions { position: fixed; z-index: 10; top: max(12px, env(safe-area-inset-top)); right: 16px; display: flex; gap: 8px; }
-.auth-admin-actions button { min-height: 38px; padding: 8px 12px; border: 1px solid #dcecff; border-radius: 9px; background: #286fba; color: #fff; font-size: 12px; font-weight: 700; box-shadow: 0 4px 14px #173c6830; }
-.auth-admin-actions button:hover { background: #1e5d9f; }
+.auth-admin-entry { position: fixed; z-index: 10; top: max(10px, env(safe-area-inset-top)); right: 12px; }
+.auth-admin-dot { display: grid; width: 32px; height: 32px; place-items: center; padding: 0; border: 1px solid #dcecff70; border-radius: 50%; background: #286fba55; }
+.auth-admin-dot span { width: 9px; height: 9px; border-radius: 50%; background: #eaf4ff; box-shadow: 0 0 0 3px #ffffff22; }
+.auth-admin-dot:hover, .auth-admin-dot[aria-expanded="true"] { background: #1e5d9f; }
+.auth-admin-menu { position: absolute; top: 40px; right: 0; display: grid; gap: 4px; width: min(270px, calc(100vw - 24px)); padding: 8px; border: 1px solid #c8d6df; border-radius: 12px; background: #f6f8f7; box-shadow: 0 12px 32px #173c6840; }
+.auth-admin-menu button { min-height: 40px; padding: 9px 11px; border: 0; border-radius: 8px; background: transparent; color: #294b65; font-size: 13px; font-weight: 650; text-align: left; }
+.auth-admin-menu button:hover { background: #e5eef5; }
+.auth-admin-menu p { margin: 4px 6px 6px; color: #607687; font-size: 12px; line-height: 1.45; }
 .auth-card { background: #f2f5f2; border-color: #c8d6df; }
 .auth-card input, .newkb input, .composer input { background: #f7f8f5; border-color: #c8d6df; color: #24394b; }
 .auth-card button, .newkb button, .composer button { background: #327fc1; color: #fff; }
@@ -270,7 +275,7 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
   .auth-card-register { padding: 21px; }
   .auth-register-fields { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .auth-card h1 { font-size: 25px; }
-  .auth-admin-actions { right: 12px; }
+  .auth-admin-entry { right: 10px; }
   .shell {
     position: fixed;
     inset: 0;

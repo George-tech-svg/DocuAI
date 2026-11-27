@@ -129,15 +129,29 @@ export default function App() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false);
   const [adminBootstrapAvailable, setAdminBootstrapAvailable] = useState(false);
+  const [adminBootstrapConfigured, setAdminBootstrapConfigured] = useState(false);
+  const [adminAccountExists, setAdminAccountExists] = useState(false);
+  const [adminBootstrapStatus, setAdminBootstrapStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [showAdminMenu, setShowAdminMenu] = useState(false);
   const [showAdminBootstrap, setShowAdminBootstrap] = useState(false);
   const [adminSetupCode, setAdminSetupCode] = useState("");
 
   useEffect(() => {
     if (token) return;
     let cancelled = false;
-    void request<{ available: boolean }>("/auth/admin/bootstrap/status", "")
-      .then((status) => { if (!cancelled) setAdminBootstrapAvailable(status.available); })
-      .catch(() => { if (!cancelled) setAdminBootstrapAvailable(false); });
+    void request<{ available: boolean; configured: boolean; has_admin: boolean }>("/auth/admin/bootstrap/status", "")
+      .then((status) => {
+        if (cancelled) return;
+        setAdminBootstrapAvailable(status.available);
+        setAdminBootstrapConfigured(status.configured);
+        setAdminAccountExists(status.has_admin);
+        setAdminBootstrapStatus("ready");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAdminBootstrapAvailable(false);
+        setAdminBootstrapStatus("error");
+      });
     return () => { cancelled = true; };
   }, [token]);
 
@@ -767,9 +781,24 @@ export default function App() {
   if (!token) {
     return (
       <div className="auth-wrap">
-        <div className="auth-admin-actions">
-          <button type="button" onClick={() => { setIsRegistering(false); setShowAdminBootstrap(false); setHasAcceptedTerms(false); setErrorMessage(""); setSuccessMessage(""); }}>Admin sign in</button>
-          {adminBootstrapAvailable && <button type="button" onClick={() => { setShowAdminBootstrap(true); setErrorMessage(""); }}>First-time setup</button>}
+        <div className="auth-admin-entry">
+          <button className="auth-admin-dot" type="button" aria-label="Open account tools" aria-expanded={showAdminMenu} title="Account tools" onClick={() => setShowAdminMenu((open) => !open)}><span /></button>
+          {showAdminMenu && (
+            <div className="auth-admin-menu" role="menu" aria-label="Account tools">
+              <button type="button" role="menuitem" onClick={() => { setIsRegistering(false); setShowAdminBootstrap(false); setShowAdminMenu(false); setHasAcceptedTerms(false); setErrorMessage(""); setSuccessMessage(""); }}>Admin sign in</button>
+              {adminBootstrapAvailable
+                ? <button type="button" role="menuitem" onClick={() => { setShowAdminBootstrap(true); setShowAdminMenu(false); setHasAcceptedTerms(false); setFullName(""); setEmail(""); setPassword(""); setAdminSetupCode(""); setErrorMessage(""); }}>Set up first administrator</button>
+                : <p>{adminBootstrapStatus === "loading"
+                  ? "Checking administrator setup…"
+                  : adminBootstrapStatus === "error"
+                    ? "Could not check setup status. Admin sign-in is still available."
+                    : !adminBootstrapConfigured
+                      ? "To set up the first admin, configure ADMIN_BOOTSTRAP_CODE on the backend."
+                      : adminAccountExists
+                        ? "An administrator is already set up. Sign in with that account."
+                        : "First-time setup is unavailable."}</p>}
+            </div>
+          )}
         </div>
         <div className="auth-content">
         {showAdminBootstrap && adminBootstrapAvailable ? (

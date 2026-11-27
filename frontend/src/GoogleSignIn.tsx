@@ -13,7 +13,10 @@ type GoogleIdentityApi = {
 };
 
 declare global {
-  interface Window { google?: GoogleIdentityApi }
+  interface Window {
+    google?: GoogleIdentityApi & { __documindInitializedClientId?: string };
+    __documindGoogleHandler?: (response: GoogleCredential) => void;
+  }
 }
 
 const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "").trim();
@@ -52,10 +55,18 @@ export default function GoogleSignIn({ mode, acceptedTerms, onCredential }: {
         options.onCredential(response.credential, options.mode, options.acceptedTerms);
       } else setLoadError("Google did not return a sign-in credential. Please try again.");
     };
+    window.__documindGoogleHandler = callback;
     const renderButton = () => {
       if (cancelled || !buttonRef.current || !window.google) return;
       try {
-        window.google.accounts.id.initialize({ client_id: clientId, callback });
+        if (window.google.__documindInitializedClientId !== clientId) {
+          window.google.accounts.id.initialize({
+            client_id: clientId,
+            callback: (response) => window.__documindGoogleHandler?.(response),
+          });
+          window.google.__documindInitializedClientId = clientId;
+        }
+        buttonRef.current.replaceChildren();
         window.google.accounts.id.renderButton(buttonRef.current, {
           theme: "outline",
           size: "large",
@@ -86,12 +97,21 @@ export default function GoogleSignIn({ mode, acceptedTerms, onCredential }: {
         document.head.appendChild(script);
       }
       script.addEventListener("load", renderButton);
-      script.addEventListener("error", () => setLoadError("Google sign-in could not load. Check your connection and try again."), { once: true });
+      const onScriptError = () => setLoadError("Google sign-in could not load. Check your connection and try again.");
+      script.addEventListener("error", onScriptError, { once: true });
+      return () => {
+        cancelled = true;
+        if (buttonCheckTimer) window.clearTimeout(buttonCheckTimer);
+        script?.removeEventListener("load", renderButton);
+        script?.removeEventListener("error", onScriptError);
+        if (window.__documindGoogleHandler === callback) window.__documindGoogleHandler = undefined;
+      };
     }
 
     return () => {
       cancelled = true;
       if (buttonCheckTimer) window.clearTimeout(buttonCheckTimer);
+      if (window.__documindGoogleHandler === callback) window.__documindGoogleHandler = undefined;
     };
   }, [clientId, mode]);
 

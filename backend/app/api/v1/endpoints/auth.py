@@ -9,7 +9,7 @@ from app.db.session import get_db
 from app.api.dependencies import current_user
 from app.models.user import User
 from app.schemas.auth import UserRegistrationRequest, UserLogin, GoogleLoginRequest, AdminBootstrapRequest, UserResponse, AuthResponse
-from app.services.auth_service import register_user, authenticate_user, EmailAlreadyRegisteredError, AuthenticationError, GoogleOnlyAccountError, WrongPasswordError
+from app.services.auth_service import register_user, authenticate_user, EmailAlreadyRegisteredError, AuthenticationError, GoogleOnlyAccountError
 from app.core.security import create_access_token
 from app.core.config import get_settings
 from app.core.security import hash_password, verify_password
@@ -24,10 +24,11 @@ def google_sign_in_config():
 @router.get('/admin/bootstrap/status')
 def admin_bootstrap_status(db: Session=Depends(get_db)):
     """Expose only whether the one-time setup is available, never its secret."""
-    available = bool(get_settings().ADMIN_BOOTSTRAP_CODE) and db.scalar(
+    configured = bool(get_settings().ADMIN_BOOTSTRAP_CODE)
+    has_admin = db.scalar(
         select(User.id).where(User.is_superuser.is_(True)).limit(1)
-    ) is None
-    return {'available': available}
+    ) is not None
+    return {'available': configured and not has_admin, 'configured': configured, 'has_admin': has_admin}
 
 @router.post('/admin/bootstrap', response_model=AuthResponse, status_code=201)
 def bootstrap_admin(data: AdminBootstrapRequest, db: Session=Depends(get_db)):
@@ -76,10 +77,10 @@ def login(data: UserLogin, db: Session=Depends(get_db)):
         user = authenticate_user(db, data.email, data.password)
     except GoogleOnlyAccountError:
         raise HTTPException(401, 'This account was created with Google. Please sign in with Google.')
-    except WrongPasswordError:
-        raise HTTPException(401, 'Wrong password. Please try again.')
     except AuthenticationError:
-        raise HTTPException(404, 'No account found with this email. Please register first.')
+        # Use one response for an unknown email and a bad password to avoid
+        # exposing which email addresses have accounts.
+        raise HTTPException(401, 'Incorrect email or password. Please try again.')
     return AuthResponse(user=UserResponse.model_validate(user), access_token=create_access_token(str(user.id)))
 
 @router.post('/google', response_model=AuthResponse)
