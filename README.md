@@ -2,6 +2,8 @@
 
 DocuMind AI lets users register, create private knowledge bases, upload documents, and ask AI questions about them.
 
+For the complete current feature, architecture, API, database, deployment, and environment guide, see [docs/SYSTEM_DOCUMENTATION.md](docs/SYSTEM_DOCUMENTATION.md).
+
 See [PRODUCT_VISION_KENYA.md](PRODUCT_VISION_KENYA.md) for the education-first product direction, validation plan, safeguards, and future improvements.
 
 ## Project layout
@@ -22,7 +24,7 @@ Keep `.env` files and credentials private. The backend reads the existing `front
 
 ```powershell
 Set-Location 'PATH_TO_EXTRACTED_PROJECT\DocuMind_AI\backend'
-py -3.11 -m venv .venv
+py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 ```
@@ -54,19 +56,18 @@ Frontend: http://localhost:3000
 ## How document Q&A works
 
 1. User logs in and creates a knowledge base.
-2. User uploads a PDF, DOCX, or TXT file (up to 20 MB; indexing continues in the background).
+2. User uploads a text-based PDF or TXT file (up to 10 MB; indexing runs during the Vercel upload request and in the background on persistent hosts).
 3. Backend extracts text and splits it into chunks.
 4. FastEmbed runs the MiniLM ONNX model to generate 384-dimensional embeddings; PostgreSQL pgvector stores them.
-5. A question is embedded and similar chunks are retrieved.
-6. DeepSeek receives retrieved excerpts and produces an answer with sources.
+5. A question is embedded and both vector similarity and PostgreSQL full-text keyword search find candidates within the selected document or folder.
+6. Reciprocal-rank fusion merges and deduplicates the results; up to five passages are sent with the original question to DeepSeek, which produces an answer with document/page sources.
 
 ## Important limitations
 
 - Vercel deploys the frontend and FastAPI backend as services from the repository root.
-- The local PostgreSQL connection and pgvector extension were checked read-only, the frontend production build succeeds, and backend unit tests pass.
-- PDF extraction handles text PDFs; scanned PDFs require OCR, which is not included.
+- PDF extraction handles text PDFs; scanned/image-only PDFs require OCR, which is not included.
 - On Vercel, uploads are indexed before the API request returns so serverless instance recycling cannot abandon work. Persistent hosts use a serialized in-process background task; use a durable queue and separate worker for restart-safe processing there.
 - Original files are stored in Cloudinary, while document metadata, extracted text, embeddings, accounts, and conversations are stored in Neon. Uploads fail if Cloudinary storage is not configured. Deleting a document or knowledge base also removes the associated Cloudinary originals.
 - In Vercel, set the project framework to **Services** and configure the backend variables listed in `backend/ENV_SETUP.md`. FastEmbed's ONNX runtime replaces PyTorch to keep the backend function bundle under the standard size limit.
-- The backend validates files up to 20 MB. Vercel's normal function request body limit is 4.5 MB; the optional 20 MiB beta requires eligible project settings, Fluid Compute, and Performance (4 GB) memory. If that feature is unavailable for the plan, files above the request limit require direct-to-Cloudinary uploads. The frontend uses same-origin `/api/v1`; set `VITE_API_BASE_URL` only if the backend is deployed as a separate project.
+- The app enforces a 10 MB upload cap; the hosting platform may impose a lower request-body limit. Check the active Vercel plan/configuration when uploads near the app limit fail before reaching the backend. Larger-file support would require a direct-to-Cloudinary upload path or a supported host configuration. The frontend uses same-origin `/api/v1`; set `VITE_API_BASE_URL` only if the backend is deployed as a separate project.
 - Review the schema and ownership/deletion behavior before migrating an existing database.

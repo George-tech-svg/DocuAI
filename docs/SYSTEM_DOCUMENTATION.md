@@ -3,7 +3,7 @@
 **Document purpose:** a practical guide to the product, features, architecture, setup, and operational limits currently represented in this repository.
 
 **Last reviewed:** 27 November 2026  
-**Repository baseline reviewed:** `40a9adb` (`Add platform usage insights and recent activity`), with the payment recovery work described below.
+**Repository baseline reviewed:** `7515025` (`Add hybrid chat retrieval and platform workflows`).
 
 > This guide describes the code in this repository. A feature can be implemented here and still need valid provider credentials, a database migration, a Vercel redeploy, or setup in a provider console before it works in production. No secret values belong in this document.
 
@@ -26,7 +26,7 @@
 
 ## 1. Product summary
 
-DocuMind AI is a web application for organizing documents and asking questions grounded in their contents. A member creates a private folder (called a knowledge base), uploads a supported document, waits for it to be indexed, and asks questions about the selected document. The app stores conversations and can export an answer or a complete saved conversation to PDF.
+DocuMind AI is a web application for organizing documents and asking questions grounded in their contents. A member creates a private folder (called a knowledge base), uploads a supported document, waits for it to be indexed, then chats either about one selected document or across all ready documents in that folder. Conversations retain their search scope, and answers and conversations can be exported as PDFs.
 
 The repository also includes email/password and Google authentication, a one-time first-administrator setup, a platform administration console, subscription plans, and Safaricom Daraja STK Push payment handling. Billing and account gating are configurable; a feature appearing in the interface does not by itself mean its external credentials and live merchant setup are ready.
 
@@ -34,12 +34,12 @@ The repository also includes email/password and Google authentication, a one-tim
 
 1. Register with an email and password, or continue with Google.
 2. Sign in; the app keeps a signed session until sign-out or token expiry.
-3. Create a folder in the workspace and upload a PDF or TXT document.
+3. Create a folder in the workspace and upload a text-based PDF or TXT document (maximum 10 MB per file).
 4. Wait for the document state to become **Ready**.
-5. Select that document, ask a question, and review the answer and source excerpts.
-6. Reopen saved conversations or download an answer or conversation as a PDF.
+5. Select a document or its folder, choose **This document** or **This folder**, ask a question, and review the answer and source excerpts.
+6. Reopen saved conversations with their original scope or download an answer or conversation as a PDF.
 
-Without a selected document, the chat area stays available and explains how to choose a file. The backend rejects chat requests without a document. On desktop, the prompt points to the left sidebar; on mobile, it tells the member to open the folder button at the top.
+Without a selected scope, the chat area explains both modes and how to find files. Folder scope requires at least one ready document. On desktop, the welcome message points to the left sidebar; on mobile, it tells the member to open the folder button at the top.
 
 ## 2. People and permissions
 
@@ -49,7 +49,7 @@ Without a selected document, the chat area stays available and explains how to c
 | Member | Manage their own folders, documents, conversations, account settings, and billing details. Chat and upload access can optionally require an active paid subscription. |
 | Platform administrator | All member functions plus platform overview, recent activity, member controls, subscription plan management, subscription review, and payment review. |
 
-There is a one-time bootstrap flow for the **first** super administrator. It uses a server-side `ADMIN_BOOTSTRAP_CODE`, serializes concurrent attempts, and closes once an administrator exists. Public registration cannot grant administrator privileges. Further administrators are not self-registered through this public bootstrap flow.
+There is a one-time bootstrap flow for the **first and only** super administrator. It uses a server-side `ADMIN_BOOTSTRAP_CODE`, serializes concurrent attempts, and closes once an administrator exists. Public registration cannot grant administrator privileges. The small account-tools dot at the upper-right of the sign-in screen opens administrator sign-in and, while available, first-administrator setup on desktop and mobile.
 
 The admin dashboard’s integration indicators report whether required configuration values/dependencies are present. They are configuration checks, not live end-to-end tests of Google, DeepSeek, Cloudinary, or Daraja.
 
@@ -57,33 +57,37 @@ The admin dashboard’s integration indicators report whether required configura
 
 ### 3.1 Accounts and sessions
 
-- Email/password account creation collects name, email, password, and confirmation; client-side checks cover required fields, email shape, matching passwords, and an eight-character minimum. Terms and Privacy acceptance is required.
+- Email/password account creation collects name, email, password, and confirmation; client-side checks cover required fields, email shape, matching passwords, and an eight-character minimum. Terms and Privacy acceptance is required. Success is shown on the sign-in form after registration.
 - Passwords are stored as password hashes, not as readable passwords.
 - Google Identity Services provides the browser sign-in button. The backend verifies the signed Google ID token against the configured OAuth client ID and requires a verified email.
 - A Google sign-in with a verified email that matches an existing password account signs into that account, preventing an email duplicate. A Google-only account has no password hash.
-- The sign-in page shows errors and loading feedback. The backend uses a generic message for unknown emails and incorrect passwords to reduce account discovery; Google-only accounts receive a prompt to use Google.
+- Google account creation is offered on the create-account form and requires Terms/Privacy acceptance. A new verified Google email creates a Google-only account; a matching existing account is reused. A new Google account can also be created through the Google sign-in API path, so one verified email still maps to one database account.
+- The sign-in page shows errors and loading feedback. The backend uses **“Incorrect email or password. Please try again.”** for both unknown emails and incorrect passwords to reduce account discovery; Google-only accounts receive **“This account was created with Google. Please sign in with Google.”**
 - A signed JWT is held in browser local storage. The current token lifetime in code is 24 hours; a valid session is checked against the server when the app loads. Sign-out clears the local session and returns to the sign-in page.
 - An administrator signs in using the administrator account’s normal email and password, then opens the admin console from account tools.
+- Registration and login show inline errors, success feedback, and disabled/loading buttons while requests are running. Network failures are shown as readable messages. Unknown email and wrong password intentionally share one login message; this is different from the older requested wording that distinguished those cases.
 
 ### 3.2 Workspace, folders, and documents
 
 - Each member can create, rename, pin, archive, and delete their own knowledge bases and documents. Folder/document ownership is checked by the backend.
 - Current upload UI and validation allow **PDF and TXT**, with a 10 MB per-file application limit. Multiple files can be selected and are uploaded one at a time.
-- Each document has a processing state such as pending, processing, ready, or failed. The interface refreshes processing status periodically and displays errors rather than treating a failed upload as ready.
+- Each document has a processing state such as pending, processing, ready, or failed. The interface refreshes processing status and shows readable explanations for invalid file type, oversized file, scanned/image-only PDF, damaged/protected file, and server-side indexing failures. Upload input explains supported formats and the 10 MB limit before selection.
 - Before deleting a document or folder, the app checks the saved conversation count and names the history that will be lost. The user can cancel, download the affected conversations together as a PDF and then delete, or delete anyway. A failed history download prevents deletion.
-- The backend extracts text, divides it into overlapping passages, creates vector embeddings, and stores passages for retrieval. The original file is stored in Cloudinary when Cloudinary is configured.
+- The backend extracts text, divides it into overlapping passages, creates vector embeddings, and stores passages for retrieval. The original file is stored in Cloudinary; an unavailable or failing storage provider causes processing to fail with a visible explanation.
 - PDF extraction supports text-based PDFs. Scanned/image-only PDFs need OCR, which is not included. DOCX code exists in the text extraction service, but the public uploader intentionally only accepts PDF/TXT at this time.
 - Files are shown in the sidebar. On mobile, the folder list opens from the folder button; selecting a file closes the drawer.
+- Workspace layout adapts to mobile and desktop. The scope switch is a keyboard-operable segmented control above the message box. Switching from folder scope to a file through the sidebar asks for confirmation; choosing a scope directly in the control is explicit and does not need a second confirmation.
 
 ### 3.3 Chat and saved history
 
-- Chat can search either the selected document or all ready documents in its folder. The backend runs both vector similarity and PostgreSQL full-text keyword search for candidates in that scope, merges rankings with reciprocal-rank fusion, deduplicates passages, and uses up to five. If keyword search returns no matches, it uses vector results alone. It logs the path and top-five contributions; no external search service is used.
-- On a follow-up, the backend uses recent turns to rewrite the latest question as a standalone search query before retrieval. It uses that rewritten query only for retrieval, then answers with the original question and retrieved passages. Rewrite failures and empty rewrites fall back to the original question. The effective search query is stored in the user message metadata.
+- Chat uses an explicit scope: `scope_type=document` with the selected document UUID, or `scope_type=folder` with the folder/knowledge-base UUID. The backend rejects a missing or invalid scope and rejects folder scope when there are no ready documents. Both retrieval paths apply the same ownership, ready-state, and scope filters.
+- For every question, the backend runs vector similarity and PostgreSQL full-text keyword search for up to 20 candidates from each path, merges their rankings with reciprocal-rank fusion (constant 60), deduplicates by passage UUID, and uses the top five. If keyword search returns no matches, it uses vector results alone. Logs identify `hybrid` or `vector-only` and report how many of the final passages appeared in each ranking. PostgreSQL’s built-in text search and a GIN index are used; no external search service is involved.
+- On a follow-up, the backend loads up to the eight most recent conversation messages and asks DeepSeek to rewrite the latest question as a short standalone search query before retrieval. It uses the rewritten query only for embeddings and retrieval, then answers using the original question plus retrieved passages. Rewriting is best effort: missing configuration, provider/network errors, or an empty rewrite fall back to the original question. The effective query is stored as `search_query` in the user message’s JSON metadata; the original wording remains the saved message content. This behavior applies to document and folder scope.
 - The system instruction asks for a useful title, clear subheadings and bullets when helpful, plain language, short sentences, simple explanations of necessary technical words, and citations such as `[1]`. It tells the model to say when the source does not answer the question and to treat document text as evidence, not instructions.
-- Answers are rendered as readable Markdown-like headings, lists, emphasis, and code. Source excerpts carry the document name, page number when available, and excerpt text.
+- Answers are rendered as readable Markdown-like headings, lists, emphasis, and code. Source excerpts carry the document name, page number when available, and excerpt text. Folder-scope answers identify the number of source documents used.
 - Questions and answers are stored in conversations associated with the user and selected scope. Reopening a conversation restores its document or folder scope. The sidebar can reopen, rename, pin, archive, or delete conversations. Conversation endpoints verify ownership.
-- The user can download one answer as a PDF or download the full saved conversation with its cited source excerpts as a PDF. There is no general-purpose export for every data type; the built-in downloads described here are chat answer and chat conversation PDFs.
-- If no valid scope is selected, the welcome message explains both modes and where to find files. Folder chat is rejected when the folder has no ready documents.
+- Every download action currently exposed by the app produces an A4 PDF: one assistant answer, one conversation with source excerpts, or multiple saved conversations during a document/folder deletion confirmation. The app has no download action for original uploads or a general data export.
+- If no valid scope is selected, the welcome message explains both modes and where to find files. Folder chat shows a clear no-ready-documents message and is also rejected by the backend when the folder has no ready documents.
 
 ### 3.4 Account settings and billing
 
@@ -94,9 +98,32 @@ The admin dashboard’s integration indicators report whether required configura
 - Members can see whether each request is pending, granted, or rejected, including the rejection reason.
 - An active subscription requirement is controlled by `SUBSCRIPTIONS_ENFORCED`. It defaults to `false`; when enabled, uploads and chat require a currently active subscription. Administrators bypass this check.
 
+### 3.5 User-facing errors and confirmations
+
+Forms and request flows display errors in the interface instead of failing silently. Common current messages include:
+
+| Situation | Message |
+|---|---|
+| Required registration fields missing | `Please fill in all fields.` |
+| Invalid email format | `Please enter a valid email address.` |
+| Password confirmation mismatch | `Passwords do not match. Please check and try again.` |
+| Password below eight characters | `Password must be at least 8 characters long.` |
+| Duplicate password account | `An account with this email already exists. Please log in.` |
+| Registration email already belongs to Google | `This email is already registered with Google. Please sign in with Google.` |
+| Empty login fields | `Please enter both email and password.` |
+| Unknown email or incorrect password | `Incorrect email or password. Please try again.` |
+| Google-only account used on password login | `This account was created with Google. Please sign in with Google.` |
+| Invalid upload type | `Invalid file type. Please upload a PDF or TXT file.` |
+| Upload larger than the 10 MB application limit | `File is too large. Maximum size is 10MB.` |
+| Folder chat with no ready documents | `This folder has no ready documents yet. Upload a PDF or TXT file and wait until it is ready before chatting.` |
+| Generic server failure | `Something went wrong on our end. Please try again later.` |
+| Network failure | `Network error. Please check your connection and try again.` |
+
+The API client also reports request timeouts, and upload processing errors include a plain-language cause where one is available. Delete confirmations show how many conversations will be removed and provide **Cancel**, **Download conversations as PDF then delete**, and **Delete anyway** choices.
+
 ## 4. What administrators can do
 
-The Admin console has six areas:
+The Admin console has the following areas:
 
 | Area | Current capability |
 |---|---|
@@ -107,6 +134,8 @@ The Admin console has six areas:
 | Subscriptions | Review subscriptions and cancel an active subscription. |
 | Payments | Review up to 1,000 payment records, phone number, status, receipt, and provider description. |
 | Payment recovery | Review member claims and suggested matches against payments already recorded by Daraja checkout. An administrator must explicitly choose a plan and grant access, or enter a rejection reason. Decisions are recorded with the acting administrator, request, selected payment/plan, action, reason, and timestamp in the audit table. |
+
+The admin page is protected by the backend superuser flag; hiding or showing its entry point in the browser is not the authorization control. Admin activity and member data are presented in the responsive admin interface. Billing uses a muted neutral surface with readable cards and alert colors; the overall workspace and auth screens also use responsive styling.
 
 This activity view is computed from current database records, not a separate immutable audit log. It is therefore an operational recent-activity view, not a complete record of every change ever made.
 
@@ -135,16 +164,16 @@ The primary application tables are:
 | `users` | Name, unique email, optional password hash, active/verified flags, superuser flag, timestamps. Google-only users have a null password hash. |
 | `knowledge_bases` | User-owned folder name, description, active/archive/pin flags, timestamps. |
 | `documents` | Folder link, original filename, type/size, Cloudinary identifier and URL, processing state, page/chunk counts, errors, archive/pin flags, timestamps. |
-| `document_chunks` | Extracted passage, page number, order, and 384-value vector. |
-| `conversations` | Owner, folder/document links, title, archive/pin flags, timestamps. |
-| `messages` | Conversation, role, body, sequence, source metadata, model metadata, timestamp. |
+| `document_chunks` | Extracted passage, page number, order, 384-value vector. A PostgreSQL GIN expression index supports built-in full-text search. |
+| `conversations` | Owner, folder/document links, explicit `scope_type` (`folder` or `document`), title, archive/pin flags, timestamps. |
+| `messages` | Conversation, role, original body, sequence, source metadata, model metadata, optional JSON metadata (including the effective `search_query` for user turns), timestamp. |
 | `subscription_plans` | Plan name, description, price in KSh, duration, active status. |
 | `subscriptions` | User, plan, status, start/expiry dates. |
 | `mpesa_payments` | User/subscription, amount, phone, status, Daraja request IDs, receipt, callback token, result details, timestamps. |
 | `payment_recovery_requests` | Member-submitted phone, payment time and M-Pesa message/receipt, review status, optional matched payment, resulting subscription, reviewer, reason/note, and timestamps. |
 | `admin_audit_logs` | Administrator actions for payment recovery, including actor, request, action, reason, details, and timestamp. |
 
-The unique email constraint enforces one account per email. Foreign keys and ownership queries constrain member access. Removing a document also removes its chat history in the current delete flow; deleting an account cascades its owned records according to the database relationships.
+The unique email constraint enforces one account per email. Foreign keys and ownership queries constrain member access. Deleting a document removes conversations scoped to that document; deleting a folder removes its folder-scoped conversations and contained documents. The UI requires a confirmation before either delete flow and can download affected conversations as a combined PDF first. Deleting an account cascades its owned records according to the database relationships.
 
 ## 7. API reference
 
@@ -167,9 +196,9 @@ All routes below are under `/api/v1`. Unless noted as public/callback, routes re
 | `GET /knowledge-bases/{kb_id}/documents/{doc_id}/status` | Owner | Read indexing state, counts, and processing error. |
 | `PATCH /knowledge-bases/{kb_id}/documents/{doc_id}` | Owner | Update document display/archive/pin fields. |
 | `DELETE /knowledge-bases/{kb_id}/documents/{doc_id}` | Owner | Delete the document and its associated conversations; attempts Cloudinary deletion first. |
-| `POST /chat` | Member / subscription gate if enabled | Answer a question about the selected document and persist the exchange. |
+| `POST /chat` | Member / subscription gate if enabled | Accept `scope_type`, `scope_id`, question, and optional conversation ID. Run retrieval only inside the owned document or folder scope, answer with the original question, then persist the exchange and retrieval-query metadata. |
 | `GET /conversations` | Member | List the current user’s saved conversations. |
-| `GET /conversations/{id}/messages` | Owner | Read saved messages and source metadata. |
+| `GET /conversations/{id}/messages` | Owner | Read saved messages, source metadata, and per-message metadata such as the search query used. |
 | `PATCH /conversations/{id}` | Owner | Rename, archive, or pin a conversation. |
 | `DELETE /conversations/{id}` | Owner | Delete a conversation. |
 | `GET /billing/plans` | Public | List active subscription plans. |
@@ -188,6 +217,8 @@ All routes below are under `/api/v1`. Unless noted as public/callback, routes re
 | `POST /admin/payment-recovery/{request_id}/review` | Admin | Explicitly grant access for a selected plan or reject with a required reason; writes an audit record atomically with the decision. |
 | `GET /admin/payment-recovery/audit` | Admin | List recent payment-recovery decisions and the administrator who made them. |
 
+For `POST /chat`, send `scope_type: "document"` with `scope_id` set to a document UUID, or `scope_type: "folder"` with `scope_id` set to a knowledge-base UUID. `conversation_id` is optional for a new chat; when supplied, it must belong to the signed-in user and match the requested scope. The response contains the answer, saved conversation ID, and source list (document ID/name, page when known, and excerpt). Saved user messages expose `metadata.search_query` from the messages endpoint.
+
 ## 8. Third-party services
 
 ### Google Identity
@@ -196,7 +227,7 @@ The frontend uses Google Identity Services to obtain an ID credential. The backe
 
 ### DeepSeek
 
-The backend sends the user question and retrieved document passages to DeepSeek’s chat completions endpoint. The API key remains server-side. The model can be set with `DEEPSEEK_MODEL`; the code default is `deepseek-flash`. The AI integration indicator only checks whether an API key is present. Provider quotas, network access, model availability, and key validity remain external dependencies.
+The backend sends recent conversation turns and the latest follow-up to DeepSeek when it needs to rewrite a follow-up for retrieval. It sends the original question and retrieved document passages to DeepSeek to generate the answer. Both calls use the server-side API key. The model can be set with `DEEPSEEK_MODEL`; the code default is `deepseek-flash`. The rewrite is best effort and falls back to the original query after a failure or empty response. The AI integration indicator only checks whether an API key is present. Provider quotas, network access, model availability, and key validity remain external dependencies.
 
 ### Cloudinary
 
@@ -220,7 +251,7 @@ Set these as **backend/server** variables in Vercel Project Settings → Environ
 | `JWT_SECRET_KEY` | Required | Long random signing secret for login tokens. Keep private. |
 | `DEEPSEEK_API_KEY` | Needed for AI answers | Provider credential; server only. |
 | `DEEPSEEK_MODEL` | Optional | Defaults to `deepseek-flash`. |
-| `GOOGLE_CLIENT_ID` | Needed for Google sign-in | Public OAuth web client ID; also register the exact site origins in Google Cloud Console. |
+| `GOOGLE_CLIENT_ID` | Needed for Google sign-in | Public OAuth web client ID; also register the exact site origins in Google Cloud Console. Not a client secret. |
 | `CLOUDINARY_CLOUD_NAME` | Needed for original-file storage | Cloudinary account setting. |
 | `CLOUDINARY_API_KEY` | Needed for original-file storage | Server-side key. |
 | `CLOUDINARY_API_SECRET` | Needed for original-file storage | Server-only secret. |
@@ -233,9 +264,9 @@ Set these as **backend/server** variables in Vercel Project Settings → Environ
 | `MPESA_CALLBACK_BASE_URL` | Needed for reliable callbacks | Public HTTPS app origin. For the current Vercel site, confirm the active domain and use that origin; do not rely on the stale code fallback. |
 | `MPESA_TRANSACTION_TYPE` | Optional | Defaults to `CustomerPayBillOnline`; confirm whether this is appropriate for the assigned PayBill/Till configuration. |
 | `SUBSCRIPTIONS_ENFORCED` | Optional | Defaults to `false`. Set to `true` only after plans, live payments, and callbacks have been verified. |
-| `FRONTEND_ORIGIN` | Recommended | Public frontend origin used by CORS and as callback fallback. Use the active deployed domain without a trailing slash. |
+| `FRONTEND_ORIGIN` / `FRONTEND_URL` | Recommended | Public frontend origin used by CORS and as callback fallback. `FRONTEND_URL` is an accepted alias. Use the active deployed domain without a trailing slash. |
 | `FRONTEND_ORIGINS` | Optional | Additional comma-separated allowed frontend origins. |
-| `MAX_UPLOAD_MB` | Optional setting | The application currently enforces a fixed 10 MB upload cap in code. This variable cannot raise that cap. |
+| `MAX_UPLOAD_MB` / `MAX_UPLOAD_SIZE_MB` | Optional setting | Accepted aliases, but the current application upload validator enforces a fixed 10 MB per-file cap. Setting this variable cannot raise that cap. |
 | `MAX_EXTRACTED_CHARS` | Optional | Extracted-text bound; code caps it at 5,000,000 characters. |
 | `API_V1_PREFIX` | Optional | Defaults to `/api/v1`. Change only if routes and callback construction are intentionally reconfigured together. |
 
@@ -243,7 +274,7 @@ The frontend normally uses the same-domain `/api/v1` path. `VITE_API_BASE_URL` i
 
 ### Current production configuration notes
 
-- The repository’s older setup notes and settings defaults still mention `docuai-jet.vercel.app` in places. The production origin used in recent troubleshooting was `https://docuai-ljxe.vercel.app`. Verify the actual Vercel production domain and configure `FRONTEND_ORIGIN`, Google authorized origins, and `MPESA_CALLBACK_BASE_URL` to match it.
+- Use the actual production domain shown in the Vercel project. Configure `FRONTEND_ORIGIN`, Google authorized origins, and `MPESA_CALLBACK_BASE_URL` to match it; do not rely on an old example or a stale default hostname.
 - The billing page saying “M-Pesa checkout is not enabled yet” indicates one or more required backend values are absent from the running deployment. The dashboard’s “Ready” state only checks that values exist. Check variable names, Vercel environment scope, shortcode, callback origin, and redeployment; never paste secret values into support messages.
 - The admin overview configuration flags are not connectivity probes. A green “Configured” indicator does not guarantee provider credentials are valid.
 
@@ -257,7 +288,7 @@ After adding or changing backend environment variables, redeploy the relevant Ve
 
 ### Database migrations
 
-The SQLAlchemy schema is migrated with Alembic. Run `npm run migrate` from the repository root after pulling a change that adds or modifies a database table/column and before using that backend version. The migration script invokes Alembic from the backend directory. Migration history is in `backend/migrations/versions/`; current migrations include the initial schema, compatibility fixes for an existing Neon database, archive/pin fields, document/folder conversation scope, message search metadata, plans/payments, and Google-only nullable passwords.
+The SQLAlchemy schema is migrated with Alembic. Run `npm run migrate` from the repository root after pulling a change that adds or modifies a database table/column and before using that backend version. The migration script invokes Alembic from the backend directory. Migration history is in `backend/migrations/versions/`; current migrations include the initial schema, compatibility fixes for an existing Neon database, archive/pin fields, plans/payments, Google-only nullable passwords, payment recovery/audit tables, conversation scope, per-message search metadata, and the PostgreSQL full-text GIN index. The latest repository migration is `0012_document_chunk_fts_index.py`.
 
 Do not run ad-hoc SQL to create the first administrator. Use the first-admin setup page and configured bootstrap code. The database migration is not a substitute for Google, Cloudinary, DeepSeek, or Daraja configuration.
 
@@ -282,7 +313,7 @@ Do not run ad-hoc SQL to create the first administrator. Use the first-admin set
 
 ## 12. Limits and known operational considerations
 
-1. **Upload size and Vercel proxy:** the application limit is 10 MB, but standard Vercel function request bodies may have a lower proxy cap (commonly 4.5 MB, depending on current platform features/plan). An app-side setting cannot override the hosting proxy. If larger files are required, implement direct-to-Cloudinary upload or confirm an eligible Vercel request-body configuration.
+1. **Upload size and host proxy:** the application limit is 10 MB, but the active host may impose a lower request-body limit. An app-side setting cannot override the host proxy. Confirm the current Vercel project/plan limits if files near the application maximum fail before reaching FastAPI; larger uploads would need a direct-to-Cloudinary flow or supported host configuration.
 2. **No OCR:** scanned/image-only PDFs do not yield searchable text and processing fails with an explanatory status. OCR is not implemented.
 3. **No DOCX in the public uploader:** extraction code contains a DOCX branch, but file validation and the browser picker currently allow PDF/TXT only.
 4. **In-process processing:** persistent hosts can process uploads in a background task. Vercel processing is done during the upload request to avoid relying on a serverless process continuing after the response. Large workloads may need a durable job queue/worker if processing time or scale becomes a problem.
