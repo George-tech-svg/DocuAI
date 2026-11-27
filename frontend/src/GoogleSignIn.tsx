@@ -34,7 +34,11 @@ export default function GoogleSignIn({ mode, acceptedTerms, onCredential }: {
     if (clientId) return;
     let cancelled = false;
     void request<{ enabled: boolean; client_id: string | null }>("/auth/google/config", "")
-      .then((config) => { if (!cancelled && config.enabled && config.client_id) setClientId(config.client_id); })
+      .then((config) => {
+        if (cancelled) return;
+        if (config.enabled && config.client_id) setClientId(config.client_id);
+        else setLoadError("Google sign-in is not configured yet.");
+      })
       .catch(() => { if (!cancelled) setLoadError("Google sign-in is not configured yet."); });
     return () => { cancelled = true; };
   }, [clientId]);
@@ -56,7 +60,7 @@ export default function GoogleSignIn({ mode, acceptedTerms, onCredential }: {
         window.google.accounts.id.renderButton(buttonRef.current, {
           theme: "outline",
           size: "large",
-          text: mode === "register" ? "signup_with" : "signin_with",
+          text: mode === "register" ? "continue_with" : "signin_with",
           shape: "rectangular",
           width: Math.min(400, Math.max(220, buttonRef.current.clientWidth)),
         });

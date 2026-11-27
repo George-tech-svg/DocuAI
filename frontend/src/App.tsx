@@ -386,6 +386,7 @@ export default function App() {
       }
       localStorage.setItem("documind_token", response.access_token);
       setToken(response.access_token);
+      setActivePage(response.user.is_superuser ? "admin" : "workspace");
       setPassword("");
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
@@ -411,6 +412,7 @@ export default function App() {
       localStorage.setItem("documind_token", response.access_token);
       setAdminBootstrapAvailable(false);
       setToken(response.access_token);
+      setActivePage("admin");
       setPassword("");
       setAdminSetupCode("");
     } catch (error) {
@@ -435,6 +437,7 @@ export default function App() {
       });
       localStorage.setItem("documind_token", response.access_token);
       setToken(response.access_token);
+      setActivePage(response.user.is_superuser ? "admin" : "workspace");
       setPassword("");
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
@@ -764,7 +767,10 @@ export default function App() {
   if (!token) {
     return (
       <div className="auth-wrap">
-        {adminBootstrapAvailable && <button className="admin-setup-dot" type="button" aria-label="Open one-time administrator setup" title="Administrator setup" onClick={() => { setShowAdminBootstrap(true); setErrorMessage(""); }} />}
+        <div className="auth-admin-actions">
+          <button type="button" onClick={() => { setIsRegistering(false); setShowAdminBootstrap(false); setHasAcceptedTerms(false); setErrorMessage(""); setSuccessMessage(""); }}>Admin sign in</button>
+          {adminBootstrapAvailable && <button type="button" onClick={() => { setShowAdminBootstrap(true); setErrorMessage(""); }}>First-time setup</button>}
+        </div>
         {showAdminBootstrap && adminBootstrapAvailable ? (
         <form className="auth-card" onSubmit={handleAdminBootstrap}>
           <div className="brand"><BookOpen /> DocuMind <span>AI</span></div>
@@ -790,6 +796,25 @@ export default function App() {
 
           <h1>{isRegistering ? "Create your account" : "Welcome back"}</h1>
           <p>Turn your documents into trusted answers.</p>
+
+          {isRegistering && (
+            <div className="auth-terms auth-google-terms">
+              <label>
+                <input type="checkbox" required checked={hasAcceptedTerms} onChange={(event) => setHasAcceptedTerms(event.target.checked)} />
+                <span>I agree to the</span>
+              </label>
+              <button type="button" onClick={() => openLegalPage("terms")}>Terms of Service</button>
+              <span>and</span>
+              <button type="button" onClick={() => openLegalPage("privacy")}>Privacy Notice</button>
+              <span>.</span>
+            </div>
+          )}
+
+          <GoogleSignIn
+            mode={isRegistering ? "register" : "login"}
+            acceptedTerms={hasAcceptedTerms}
+            onCredential={(credential, mode, accepted) => void handleGoogleSignIn(credential, mode, accepted)}
+          />
 
           {isRegistering && (
             <input
@@ -841,16 +866,6 @@ export default function App() {
               {confirmPassword && password !== confirmPassword && (
                 <p className="error password-mismatch" role="status">Passwords do not match. Please check and try again.</p>
               )}
-              <div className="auth-terms">
-                <label>
-                  <input type="checkbox" required checked={hasAcceptedTerms} onChange={(event) => setHasAcceptedTerms(event.target.checked)} />
-                  <span>I agree to the</span>
-                </label>
-                <button type="button" onClick={() => openLegalPage("terms")}>Terms of Service</button>
-                <span>and</span>
-                <button type="button" onClick={() => openLegalPage("privacy")}>Privacy Notice</button>
-                <span>.</span>
-              </div>
             </>
           )}
 
@@ -889,13 +904,6 @@ export default function App() {
             </button>
           </p>
         </form>}
-        {!showAdminBootstrap && (
-          <GoogleSignIn
-            mode={isRegistering ? "register" : "login"}
-            acceptedTerms={hasAcceptedTerms}
-            onCredential={(credential, mode, accepted) => void handleGoogleSignIn(credential, mode, accepted)}
-          />
-        )}
         <nav className="auth-legal-nav" aria-label="Legal information">
           <button type="button" onClick={() => openLegalPage("terms")}>Terms of service</button>
           <span aria-hidden="true">·</span>
