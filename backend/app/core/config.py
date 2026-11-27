@@ -11,7 +11,7 @@ from sqlalchemy.engine import make_url
 # repository root or backend/ without relying on the shell's working directory.
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PROJECT_ENV_FILES = (PROJECT_ROOT / 'frontend' / '.env', PROJECT_ROOT / 'backend' / '.env')
-MAX_SAFE_UPLOAD_MB = 20
+MAX_SAFE_UPLOAD_MB = 50
 MAX_SAFE_EXTRACTED_CHARS = 5_000_000
 
 class Settings(BaseSettings):
@@ -25,8 +25,7 @@ class Settings(BaseSettings):
     )
     FRONTEND_ORIGINS: str = ''
     MAX_UPLOAD_MB: int = Field(
-        # Keep uploads within the configured Vercel function request limit.
-        default=20,
+        default=10,
         validation_alias=AliasChoices('MAX_UPLOAD_MB', 'MAX_UPLOAD_SIZE_MB'),
     )
     MAX_EXTRACTED_CHARS: int = Field(default=MAX_SAFE_EXTRACTED_CHARS, gt=0)
@@ -57,8 +56,8 @@ def get_settings():
 
 
 def max_upload_mb() -> int:
-    """Apply a conservative per-file cap even if hosting env is oversized."""
-    return 10
+    """Return the configured upload cap, bounded to a safe service maximum."""
+    return max(1, min(get_settings().MAX_UPLOAD_MB, MAX_SAFE_UPLOAD_MB))
 
 
 def max_extracted_chars() -> int:

@@ -55,7 +55,7 @@ def _resolve_scope(db, user_id, data: ChatRequest):
         Document.knowledge_base_id == knowledge_base_id,
         Document.status == 'ready',
     ).limit(1)) is None:
-        raise HTTPException(400, 'This folder has no ready documents yet. Upload a PDF or TXT file and wait until it is ready before chatting.')
+        raise HTTPException(400, 'This folder has no ready documents yet. Upload a PDF, TXT, DOCX, JPG, PNG, or HEIC file and wait until it is ready before chatting.')
     return knowledge_base_id, document_id, conversation
 
 def _load_follow_up_context(user_id, data: ChatRequest):
@@ -172,7 +172,9 @@ async def chat(data: ChatRequest, user: User=Depends(subscribed_user)):
 
 @router.get('/conversations', response_model=list[ConversationResponse])
 def conversations(user: User=Depends(current_user), db: Session=Depends(get_db)):
-    return list(db.scalars(select(Conversation).where(Conversation.user_id == user.id).order_by(Conversation.is_pinned.desc(), Conversation.created_at.desc())).all())
+    # The workspace only needs a bounded recent history for initial render. A
+    # composite index avoids sorting an ever-growing account history on login.
+    return list(db.scalars(select(Conversation).where(Conversation.user_id == user.id).order_by(Conversation.is_pinned.desc(), Conversation.created_at.desc()).limit(200)).all())
 
 @router.patch('/conversations/{conversation_id}', response_model=ConversationResponse)
 def update_conversation(conversation_id: UUID, data: ConversationUpdate, user: User=Depends(current_user), db: Session=Depends(get_db)):

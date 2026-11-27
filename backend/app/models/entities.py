@@ -2,9 +2,9 @@
 
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, Text, ForeignKey, Boolean, Integer, BigInteger, DateTime, UniqueConstraint, false
+from sqlalchemy import String, Text, ForeignKey, Boolean, Integer, BigInteger, DateTime, UniqueConstraint, false, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from pgvector.sqlalchemy import Vector
 from app.db.base import Base
 
@@ -56,6 +56,9 @@ class Document(Base):
     cloudinary_resource_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
     storage_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(10), default='pending')
+    progress_stage: Mapped[str] = mapped_column(String(20), default='uploading', server_default='uploading')
+    ocr_used: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false')
+    ocr_confidence: Mapped[float | None] = mapped_column(nullable=True)
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
     processing_error: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -81,6 +84,7 @@ class DocumentChunk(Base):
 
 class Conversation(Base):
     __tablename__ = 'conversations'
+    __table_args__ = (Index('ix_conversations_user_pin_created', 'user_id', 'is_pinned', 'created_at'),)
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uid)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
     knowledge_base_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('knowledge_bases.id', ondelete='SET NULL'), nullable=True)
@@ -180,3 +184,61 @@ class AdminAuditLog(Base):
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     details: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+class Job(Base):
+    __tablename__ = 'jobs'
+    __table_args__ = (Index('ix_jobs_status_run_after', 'status', 'run_after'),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uid)
+    type: Mapped[str] = mapped_column(String(80), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default='queued', server_default='queued', nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default='0', nullable=False)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=4, server_default='4', nullable=False)
+    run_after: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, nullable=False, index=True)
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    locked_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+
+class DocumentEvent(Base):
+    __tablename__ = 'document_events'
+    __table_args__ = (Index('ix_document_events_user_due', 'user_id', 'due_at'),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uid)
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('documents.id', ondelete='CASCADE'), index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    kind: Mapped[str] = mapped_column(String(30), default='other')
+    title: Mapped[str] = mapped_column(String(300))
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    source_page: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_excerpt: Mapped[str] = mapped_column(Text)
+    confidence: Mapped[float] = mapped_column()
+    status: Mapped[str] = mapped_column(String(20), default='suggested', index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    document = relationship('Document')
+
+class NotificationPreference(Base):
+    __tablename__ = 'notification_preferences'
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
+    channels: Mapped[dict] = mapped_column(JSONB, default=lambda: {'email': True, 'in_app': True})
+    lead_days: Mapped[list] = mapped_column(JSONB, default=lambda: [14, 7, 1])
+    quiet_start: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    quiet_end: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    timezone: Mapped[str] = mapped_column(String(80), default='Africa/Nairobi', server_default='Africa/Nairobi')
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+class Reminder(Base):
+    __tablename__ = 'reminders'
+    __table_args__ = (UniqueConstraint('event_id', 'channel', 'remind_at', name='uq_reminder_event_channel_time'), Index('ix_reminders_status_time', 'status', 'remind_at'))
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uid)
+    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('document_events.id', ondelete='CASCADE'), index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    channel: Mapped[str] = mapped_column(String(20))
+    remind_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default='scheduled', index=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default='0')
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    event = relationship('DocumentEvent')

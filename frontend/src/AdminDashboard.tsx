@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import { Activity, ArrowLeft, BadgeCheck, CreditCard, FileText, LayoutDashboard, MessageCircle, Package, Plus, Users } from "lucide-react";
 import { getErrorMessage, request } from "./api";
 
-type Tab = "overview" | "members" | "activity" | "plans" | "subscriptions" | "payments" | "payment-recovery";
+type Tab = "overview" | "members" | "activity" | "plans" | "subscriptions" | "payments" | "payment-recovery" | "jobs";
 type Overview = { members_total: number; members_active: number; documents_total: number; documents_ready: number; documents_failed: number; conversations_total: number; questions_total: number; questions_last_7_days: number; subscriptions_active: number; subscriptions_expiring: number; payments_total: number; payments_pending: number; revenue_kes: number; mpesa_ready: boolean; google_ready: boolean; ai_ready: boolean; storage_ready: boolean };
 type Plan = { id: string; name: string; description: string; price_kes: number; duration_days: number; is_active: boolean };
 type Member = { id: string; full_name: string; email: string; is_active: boolean; is_superuser: boolean; current_plan: string | null; subscription_status: string | null; expires_at: string | null; created_at: string };
@@ -13,6 +13,8 @@ type ActivityEvent = { id: string; kind: string; member_name: string; member_ema
 type RecoveryMatch = { payment_id: string; plan_id: string; member_name: string; member_email: string; plan_name: string; amount_kes: number; phone_number: string; status: string; mpesa_receipt: string | null; created_at: string; match_reason: string };
 type PaymentRecovery = { id: string; user_id: string; member_name: string; member_email: string; phone_number: string; paid_at: string; mpesa_message: string; status: string; matched_payment_id: string | null; granted_subscription_id: string | null; reviewed_by_user_id: string | null; rejection_reason: string | null; admin_note: string | null; created_at: string; reviewed_at: string | null; matches: RecoveryMatch[] };
 type RecoveryAudit = { id: string; admin_user_id: string | null; admin_email: string | null; payment_recovery_request_id: string | null; action: string; reason: string | null; details: string | null; created_at: string };
+type ProcessingJob = { id: string; type: string; attempts: number; max_attempts: number; last_error: string | null; created_at: string; updated_at: string; document_id: string | null; document_name: string | null };
+type JobQueue = { counts: Record<"queued" | "running" | "done" | "failed", number>; failed: ProcessingJob[] };
 
 const tabs: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -22,6 +24,7 @@ const tabs: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "subscriptions", label: "Subscriptions", icon: BadgeCheck },
   { id: "payments", label: "Payments", icon: CreditCard },
   { id: "payment-recovery", label: "Payment recovery", icon: CreditCard },
+  { id: "jobs", label: "Jobs", icon: Activity },
 ];
 
 function money(amount: number) { return `KSh ${amount.toLocaleString()}`; }
@@ -89,6 +92,7 @@ export default function AdminDashboard({ token, onBack }: { token: string; onBac
   const [payments, setPayments] = useState<Payment[]>([]);
   const [paymentRecovery, setPaymentRecovery] = useState<PaymentRecovery[]>([]);
   const [recoveryAudit, setRecoveryAudit] = useState<RecoveryAudit[]>([]);
+  const [jobQueue, setJobQueue] = useState<JobQueue | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(true);
@@ -108,6 +112,7 @@ export default function AdminDashboard({ token, onBack }: { token: string; onBac
       if (nextTab === "plans") setPlans(await request<Plan[]>("/admin/plans", token));
       if (nextTab === "subscriptions") setSubscriptions(await request<Subscription[]>("/admin/subscriptions", token));
       if (nextTab === "payments") setPayments(await request<Payment[]>("/admin/payments", token));
+      if (nextTab === "jobs") setJobQueue(await request<JobQueue>("/admin/jobs", token));
       if (nextTab === "payment-recovery") {
         const [requests, availablePlans, audit] = await Promise.all([
           request<PaymentRecovery[]>("/admin/payment-recovery", token),
@@ -128,6 +133,7 @@ export default function AdminDashboard({ token, onBack }: { token: string; onBac
     setBusy(true); setError("");
     try {
       await request(path, token, { method, body: body ? JSON.stringify(body) : undefined });
+      setNotice(path.includes("/admin/jobs/") ? "The document processing job has been queued again." : "");
       await load(tab);
       if (tab === "plans") await load("overview");
     } catch (e) { setError(getErrorMessage(e)); }
@@ -216,6 +222,12 @@ export default function AdminDashboard({ token, onBack }: { token: string; onBac
           <div className="admin-section-heading"><div><h2>Payment recovery</h2><p>Review claims manually. Suggested matches are based on recorded phone, receipt, and payment time; they are not proof of payment. This form never grants access by itself.</p></div><button className="admin-secondary" disabled={loading} onClick={() => void load("payment-recovery")}>{loading ? "Loading…" : "Refresh"}</button></div>
           <div className="payment-recovery-admin-list">{paymentRecovery.map((recovery) => <PaymentRecoveryCard key={recovery.id} recovery={recovery} plans={plans} busy={busy} onReview={(action, payload) => void reviewPaymentRecovery(recovery.id, action, payload)} />)}{!loading && paymentRecovery.length === 0 && <p className="admin-note">No payment recovery requests have been submitted.</p>}</div>
           <section className="recovery-audit-section"><h2>Decision audit</h2><p>Administrator actions are recorded with the request, decision, reason, and time.</p><div className="admin-list">{recoveryAudit.map((entry) => <article className="admin-row" key={entry.id}><div className="admin-row-main"><strong>{entry.action === "payment_recovery_access_granted" ? "Access granted" : "Request rejected"}</strong><span>{entry.admin_email ?? `Administrator ${entry.admin_user_id ?? "removed"}`} · request {entry.payment_recovery_request_id}</span>{entry.reason && <small>{entry.reason}</small>}</div><time>{new Date(entry.created_at).toLocaleString()}</time></article>)}{!loading && recoveryAudit.length === 0 && <p className="admin-note">No recovery decisions have been recorded.</p>}</div></section>
+        </>}
+        {tab === "jobs" && <>
+          <div className="admin-section-heading"><div><h2>Document processing jobs</h2><p>Durable jobs run on the background worker. Failed jobs show a safe error and can be queued again.</p></div><button className="admin-secondary" disabled={loading} onClick={() => void load("jobs")}>Refresh</button></div>
+          <div className="admin-stats job-counts">{(["queued", "running", "done", "failed"] as const).map((status) => <article className="admin-stat" key={status}><span>{status === "done" ? "Done" : status[0].toUpperCase() + status.slice(1)}</span><strong>{jobQueue?.counts[status] ?? "—"}</strong></article>)}</div>
+          <h3>Last 50 failed jobs</h3>
+          <div className="admin-list">{jobQueue?.failed.map((job) => <article className="admin-row job-row" key={job.id}><div className="admin-row-main"><strong>{job.document_name ?? "Document removed"}</strong><span>{job.type} · attempts {job.attempts}/{job.max_attempts}</span><small className="job-error">{job.last_error ?? "Processing failed without a detailed message."}</small><small>Updated {new Date(job.updated_at).toLocaleString()} · Job {job.id}</small></div><button className="admin-primary" type="button" disabled={busy || !job.document_id} onClick={() => void mutate(`/admin/jobs/${job.id}/retry`, "POST")}>{busy ? "Queuing…" : "Retry"}</button></article>)}{!loading && (jobQueue?.failed.length ?? 0) === 0 && <p className="admin-note">No failed document jobs.</p>}</div>
         </>}
       </main>
     </div>

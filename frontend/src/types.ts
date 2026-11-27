@@ -15,6 +15,10 @@ export interface DocumentRecord {
   created_at: string;
   page_count: number | null;
   status: string;
+  progress_stage: string;
+  ocr_used: boolean;
+  ocr_confidence: number | null;
+  low_ocr_confidence: boolean;
   chunk_count: number;
   processing_error: string | null;
   is_archived: boolean;

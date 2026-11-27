@@ -9,12 +9,65 @@ from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session, aliased
 from app.api.dependencies import admin_user
 from app.db.session import get_db
-from app.models.entities import AdminAuditLog, Conversation, Document, KnowledgeBase, Message, MpesaPayment, PaymentRecoveryRequest, Subscription, SubscriptionPlan, User
+from app.models.entities import AdminAuditLog, Conversation, Document, Job, KnowledgeBase, Message, MpesaPayment, PaymentRecoveryRequest, Subscription, SubscriptionPlan, User
 from app.schemas.billing import AdminActivity, AdminAuditEntry, AdminMember, AdminOverview, AdminPayment, AdminPaymentRecoveryView, AdminSubscription, AdminSubscriptionUpdate, MemberUpdate, PaymentRecoveryReview, PaymentRecoveryReviewResult, PlanCreate, PlanResponse, PlanUpdate, RecoveryMatch
 from app.core.config import get_settings
 from app.services.mpesa import mpesa_ready
 
 router = APIRouter(prefix='/admin', tags=['Administration'], dependencies=[Depends(admin_user)])
+
+@router.get('/jobs')
+def processing_jobs(db: Session = Depends(get_db)):
+    """Return queue totals and the most recent failed jobs for platform support."""
+    grouped = db.execute(select(Job.status, func.count(Job.id)).group_by(Job.status)).all()
+    counts = {status: int(count) for status, count in grouped}
+    for status in ('queued', 'running', 'done', 'failed'):
+        counts.setdefault(status, 0)
+    rows = db.scalars(select(Job).where(Job.status == 'failed').order_by(Job.updated_at.desc()).limit(50)).all()
+    failed = []
+    for job in rows:
+        payload = job.payload if isinstance(job.payload, dict) else {}
+        document_id = payload.get('document_id')
+        document = db.get(Document, document_id) if document_id else None
+        failed.append({
+            'id': str(job.id), 'type': job.type, 'status': job.status,
+            'attempts': job.attempts, 'max_attempts': job.max_attempts,
+            'last_error': job.last_error, 'created_at': job.created_at,
+            'updated_at': job.updated_at, 'document_id': str(document_id) if document_id else None,
+            'document_name': document.original_filename if document else None,
+        })
+    return {'counts': counts, 'failed': failed}
+
+@router.post('/jobs/{job_id}/retry')
+def retry_processing_job(job_id: UUID, db: Session = Depends(get_db)):
+    job = db.scalar(select(Job).where(Job.id == job_id).with_for_update())
+    if not job:
+        raise HTTPException(404, 'Processing job not found.')
+    if job.status != 'failed':
+        raise HTTPException(409, 'Only failed processing jobs can be retried.')
+    if job.type not in {'index_document', 'extract_events', 'send_due_reminders'}:
+        raise HTTPException(400, 'This job type cannot be retried from the admin console.')
+    payload = job.payload if isinstance(job.payload, dict) else {}
+    document_id = payload.get('document_id')
+    document = db.get(Document, document_id) if document_id else None
+    if job.type in {'index_document', 'extract_events'} and not document:
+        raise HTTPException(404, 'The document for this job no longer exists.')
+    now = datetime.now(timezone.utc)
+    job.status = 'queued'
+    job.attempts = 0
+    job.max_attempts = max(job.max_attempts, 4)
+    job.run_after = now
+    job.locked_at = None
+    job.locked_by = None
+    job.last_error = None
+    job.updated_at = now
+    if document and job.type == 'index_document':
+        document.status = 'pending'
+        document.progress_stage = 'extracting'
+        document.processing_error = None
+        document.updated_at = now
+    db.commit()
+    return {'id': str(job.id), 'status': job.status, 'message': 'The processing job was queued again.'}
 
 def _recovery_matches(db: Session, recovery: PaymentRecoveryRequest) -> list[RecoveryMatch]:
     """Suggest recorded Daraja payments by receipt or a nearby phone/time match."""

@@ -1,0 +1,18 @@
+services:
+  - type: worker
+    name: documind-index-worker
+    runtime: python
+    rootDir: backend
+    buildCommand: apt-get update && apt-get install -y tesseract-ocr tesseract-ocr-eng tesseract-ocr-swa libheif-dev && pip install -r requirements-worker.txt && python scripts/preload_embedding_model.py
+    startCommand: python worker.py
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: MAX_UPLOAD_MB
+        value: "10"
+      - key: MAX_EXTRACTED_CHARS
+        value: "5000000"
+      - key: JOB_POLL_SECONDS
+        value: "3"

@@ -10,6 +10,19 @@ def test_chunking():
 def test_validate_txt():
     assert validate_upload('notes.txt', b'hello', 10) == ('notes.txt', 'text/plain')
 
+def test_validate_supported_photo_signature():
+    assert validate_upload('photo.jpg', b'\xff\xd8\xffphoto', 10) == ('photo.jpg', 'image/jpeg')
+    assert validate_upload('photo.png', b'\x89PNG\r\n\x1a\nphoto', 10) == ('photo.png', 'image/png')
+
+def test_configured_upload_limit_is_applied():
+    try:
+        validate_upload('notes.txt', b'x' * 1_000_001, 1)
+    except HTTPException as e:
+        assert e.status_code == 413
+        assert 'maximum size' in e.detail.lower()
+    else:
+        assert False
+
 def test_reject_invalid_pdf():
     try:
         validate_upload('bad.pdf', b'hello', 10)

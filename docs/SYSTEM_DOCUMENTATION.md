@@ -3,7 +3,7 @@
 **Document purpose:** a practical guide to the product, features, architecture, setup, and operational limits currently represented in this repository.
 
 **Last reviewed:** 27 November 2026  
-**Repository baseline reviewed:** `7515025` (`Add hybrid chat retrieval and platform workflows`).
+**Repository baseline reviewed:** `956d8c9` (`Refresh full system documentation`).
 
 > This guide describes the code in this repository. A feature can be implemented here and still need valid provider credentials, a database migration, a Vercel redeploy, or setup in a provider console before it works in production. No secret values belong in this document.
 
@@ -34,8 +34,8 @@ The repository also includes email/password and Google authentication, a one-tim
 
 1. Register with an email and password, or continue with Google.
 2. Sign in; the app keeps a signed session until sign-out or token expiry.
-3. Create a folder in the workspace and upload a text-based PDF or TXT document (maximum 10 MB per file).
-4. Wait for the document state to become **Ready**.
+3. Create a folder in the workspace and upload PDF, TXT, DOCX, JPG, PNG, or HEIC files (10 MB per file by default).
+4. The API stores the original in Cloudinary, queues indexing in PostgreSQL, then returns HTTP 202. A separate Render worker extracts text, runs OCR when needed, and builds search vectors. Follow the processing stage until the document becomes **Ready**.
 5. Select a document or its folder, choose **This document** or **This folder**, ask a question, and review the answer and source excerpts.
 6. Reopen saved conversations with their original scope or download an answer or conversation as a PDF.
 
@@ -47,7 +47,7 @@ Without a selected scope, the chat area explains both modes and how to find file
 |---|---|
 | Visitor | View the sign-in/create-account screens and legal pages. |
 | Member | Manage their own folders, documents, conversations, account settings, and billing details. Chat and upload access can optionally require an active paid subscription. |
-| Platform administrator | All member functions plus platform overview, recent activity, member controls, subscription plan management, subscription review, and payment review. |
+| Platform administrator | All member functions plus platform overview, recent activity, member controls, subscription plan management, subscription review, payment review, and background-job monitoring/retry. |
 
 There is a one-time bootstrap flow for the **first and only** super administrator. It uses a server-side `ADMIN_BOOTSTRAP_CODE`, serializes concurrent attempts, and closes once an administrator exists. Public registration cannot grant administrator privileges. The small account-tools dot at the upper-right of the sign-in screen opens administrator sign-in and, while available, first-administrator setup on desktop and mobile.
 
@@ -70,11 +70,16 @@ The admin dashboard’s integration indicators report whether required configura
 ### 3.2 Workspace, folders, and documents
 
 - Each member can create, rename, pin, archive, and delete their own knowledge bases and documents. Folder/document ownership is checked by the backend.
-- Current upload UI and validation allow **PDF and TXT**, with a 10 MB per-file application limit. Multiple files can be selected and are uploaded one at a time.
-- Each document has a processing state such as pending, processing, ready, or failed. The interface refreshes processing status and shows readable explanations for invalid file type, oversized file, scanned/image-only PDF, damaged/protected file, and server-side indexing failures. Upload input explains supported formats and the 10 MB limit before selection.
+- Upload UI and validation allow **PDF, TXT, DOCX, JPG, PNG, and HEIC**. Each source file has a configurable per-file cap (`MAX_UPLOAD_MB`, 10 MB by default; service hard ceiling 50 MB). Several selected JPG/PNG photos are combined in selection order into one PDF before upload. Mobile includes a photo picker and a **Take photo** control with the environment-camera capture hint.
+- Documents have `pending`, `processing`, `ready`, or `failed` status and a processing stage (`uploading`, `extracting`, `ocr`, `embedding`, or `ready`). The browser polls while work is active and shows the current stage.
+- pypdf extracts PDF text; python-docx reads Word paragraphs and tables; TXT is decoded as UTF-8. Sparse PDF pages and image files use per-page OCR with Tesseract `eng+swa`. HEIC is converted to JPEG in memory for OCR. One page failing OCR does not stop other pages. Documents store whether OCR ran and average OCR confidence; the UI warns below 60% or when OCR confidence is unavailable.
+- Upload instructions explain supported types, the configured size limit, and that clear scans/photos work best. Errors identify invalid or mismatched types, oversized files, unreadable files, and server-side processing failures.
 - Before deleting a document or folder, the app checks the saved conversation count and names the history that will be lost. The user can cancel, download the affected conversations together as a PDF and then delete, or delete anyway. A failed history download prevents deletion.
 - The backend extracts text, divides it into overlapping passages, creates vector embeddings, and stores passages for retrieval. The original file is stored in Cloudinary; an unavailable or failing storage provider causes processing to fail with a visible explanation.
-- PDF extraction supports text-based PDFs. Scanned/image-only PDFs need OCR, which is not included. DOCX code exists in the text extraction service, but the public uploader intentionally only accepts PDF/TXT at this time.
+- The upload request stores the original in Cloudinary, saves a pending document row, and inserts an `index_document` job in PostgreSQL in the same transaction. The job payload contains only the document ID; the worker fetches the original through its saved Cloudinary URL. The API returns HTTP 202 after accepting the work and does no indexing in the web request.
+- The separate Render worker claims jobs with `SELECT ... FOR UPDATE SKIP LOCKED`, preventing concurrent workers from claiming the same available row. It refreshes a 10-minute lease while working; jobs from a crashed worker can be reclaimed after lease expiry.
+- Jobs allow four attempts by default. Failures store a short user-readable error and retry after exponential delays (30, 60, and 120 seconds); exhausted jobs become failed. The admin Jobs area shows queue counts and the last 50 failures and can queue a failed document again.
+- The worker needs Tesseract with English and Swahili language data, PyMuPDF, Pillow, pytesseract, pillow-heif, and libheif. These are installed by the worker requirements file and Render build command. The Vercel backend only accepts/stores uploads and enqueues jobs; it does not run OCR/indexing.
 - Files are shown in the sidebar. On mobile, the folder list opens from the folder button; selecting a file closes the drawer.
 - Workspace layout adapts to mobile and desktop. The scope switch is a keyboard-operable segmented control above the message box. Switching from folder scope to a file through the sidebar asks for confirmation; choosing a scope directly in the control is explicit and does not need a second confirmation.
 
@@ -113,9 +118,9 @@ Forms and request flows display errors in the interface instead of failing silen
 | Empty login fields | `Please enter both email and password.` |
 | Unknown email or incorrect password | `Incorrect email or password. Please try again.` |
 | Google-only account used on password login | `This account was created with Google. Please sign in with Google.` |
-| Invalid upload type | `Invalid file type. Please upload a PDF or TXT file.` |
-| Upload larger than the 10 MB application limit | `File is too large. Maximum size is 10MB.` |
-| Folder chat with no ready documents | `This folder has no ready documents yet. Upload a PDF or TXT file and wait until it is ready before chatting.` |
+| Invalid upload type | `Invalid file type. Please upload a PDF, TXT, DOCX, JPG, PNG, or HEIC file.` |
+| Upload larger than the configured per-file limit | `File is too large. Maximum size is 10MB.` at the default setting; the number follows `MAX_UPLOAD_MB`. |
+| Folder chat with no ready documents | `This folder has no ready documents yet. Upload a PDF, TXT, DOCX, JPG, PNG, or HEIC file and wait until it is ready before chatting.` |
 | Generic server failure | `Something went wrong on our end. Please try again later.` |
 | Network failure | `Network error. Please check your connection and try again.` |
 
@@ -134,6 +139,7 @@ The Admin console has the following areas:
 | Subscriptions | Review subscriptions and cancel an active subscription. |
 | Payments | Review up to 1,000 payment records, phone number, status, receipt, and provider description. |
 | Payment recovery | Review member claims and suggested matches against payments already recorded by Daraja checkout. An administrator must explicitly choose a plan and grant access, or enter a rejection reason. Decisions are recorded with the acting administrator, request, selected payment/plan, action, reason, and timestamp in the audit table. |
+| Jobs | View counts for queued, running, done, and failed indexing jobs; inspect the most recent 50 failures and their user-readable errors; enqueue a failed indexing job again. |
 
 The admin page is protected by the backend superuser flag; hiding or showing its entry point in the browser is not the authorization control. Admin activity and member data are presented in the responsive admin interface. Billing uses a muted neutral surface with readable cards and alert colors; the overall workspace and auth screens also use responsive styling.
 
@@ -147,13 +153,13 @@ This activity view is computed from current database records, not a separate imm
 | API | FastAPI on Python 3.12, with versioned endpoints under `/api/v1`. |
 | Database | PostgreSQL (configured for Neon) with SQLAlchemy and Alembic migrations. `pgvector` stores 384-dimensional document vectors and performs similarity search. |
 | Authentication | Signed JWT bearer tokens; Argon2-backed password hashing through `pwdlib`; Google ID-token verification through `google-auth`. |
-| Document indexing | `pypdf` extracts text from normal PDFs; TXT is decoded as UTF-8; text is split into passages; FastEmbed runs a quantized MiniLM-L6-v2 embedding model. |
+| Document indexing | A PostgreSQL jobs table feeds a Render worker. pypdf/PyMuPDF extract and render PDFs; python-docx reads Word files; Pillow reads images; Tesseract performs `eng+swa` OCR; text is split into passages; FastEmbed runs a quantized MiniLM-L6-v2 embedding model. |
 | Answer generation | DeepSeek chat completions API, default model name `deepseek-flash`. |
 | Original file storage | Cloudinary raw-file storage. Text passages and vectors are stored in PostgreSQL. |
 | Payments | Safaricom Daraja OAuth and M-Pesa STK Push API; a public callback updates payment and subscription records. |
 | Hosting/routing | `vercel.json` defines separate frontend and backend services. Same-domain `/api/*` requests are routed to FastAPI; all other paths go to the Vite frontend. |
 
-The FastEmbed model is loaded lazily in the service process so simple health checks and app startup do not load it immediately. The Vercel backend build script preloads and validates the model cache. Upload indexing is performed within the Vercel request path; on persistent hosts the API can return an accepted response and use an in-process background task.
+The FastEmbed model is loaded lazily in the worker process so simple API health checks do not load it. The Render build preloads and validates its local model cache; the first job after a fresh worker build therefore does not need to download the model. The Vercel API only validates/stores uploads and enqueues jobs; a separate Render worker performs extraction, OCR, chunking, and embeddings.
 
 ## 6. Data stored
 
@@ -163,7 +169,8 @@ The primary application tables are:
 |---|---|
 | `users` | Name, unique email, optional password hash, active/verified flags, superuser flag, timestamps. Google-only users have a null password hash. |
 | `knowledge_bases` | User-owned folder name, description, active/archive/pin flags, timestamps. |
-| `documents` | Folder link, original filename, type/size, Cloudinary identifier and URL, processing state, page/chunk counts, errors, archive/pin flags, timestamps. |
+| `documents` | Folder link, original filename, type/size, Cloudinary identifier and URL, processing state/stage, OCR-used flag/confidence, page/chunk counts, errors, archive/pin flags, timestamps. |
+| `jobs` | PostgreSQL JSONB payload, type/status, attempts/maximum attempts, next run time, worker lease/identity, safe last error, and timestamps. A status/run-time index supports queue polling. |
 | `document_chunks` | Extracted passage, page number, order, 384-value vector. A PostgreSQL GIN expression index supports built-in full-text search. |
 | `conversations` | Owner, folder/document links, explicit `scope_type` (`folder` or `document`), title, archive/pin flags, timestamps. |
 | `messages` | Conversation, role, original body, sequence, source metadata, model metadata, optional JSON metadata (including the effective `search_query` for user turns), timestamp. |
@@ -192,8 +199,9 @@ All routes below are under `/api/v1`. Unless noted as public/callback, routes re
 | `GET /knowledge-bases`, `POST /knowledge-bases` | Member | List or create folders. |
 | `GET /knowledge-bases/{kb_id}`, `PATCH /knowledge-bases/{kb_id}`, `DELETE /knowledge-bases/{kb_id}` | Owner | Read, update, or delete a folder. |
 | `GET /knowledge-bases/{kb_id}/documents` | Owner | List documents and states for a folder. |
-| `POST /knowledge-bases/{kb_id}/documents` | Member / subscription gate if enabled | Upload a PDF or TXT file. |
-| `GET /knowledge-bases/{kb_id}/documents/{doc_id}/status` | Owner | Read indexing state, counts, and processing error. |
+| `GET /knowledge-bases/{kb_id}/documents/upload-config` | Owner | Return the configured size limit and accepted file extensions for the upload UI. |
+| `POST /knowledge-bases/{kb_id}/documents` | Member / subscription gate if enabled | Store a PDF/TXT/DOCX/image original in Cloudinary, create a document, enqueue indexing, and return HTTP 202. |
+| `GET /knowledge-bases/{kb_id}/documents/{doc_id}/status` | Owner | Read state/stage, OCR use/confidence/warning, counts, and processing error. |
 | `PATCH /knowledge-bases/{kb_id}/documents/{doc_id}` | Owner | Update document display/archive/pin fields. |
 | `DELETE /knowledge-bases/{kb_id}/documents/{doc_id}` | Owner | Delete the document and its associated conversations; attempts Cloudinary deletion first. |
 | `POST /chat` | Member / subscription gate if enabled | Accept `scope_type`, `scope_id`, question, and optional conversation ID. Run retrieval only inside the owned document or folder scope, answer with the original question, then persist the exchange and retrieval-query metadata. |
@@ -216,6 +224,8 @@ All routes below are under `/api/v1`. Unless noted as public/callback, routes re
 | `GET /admin/payment-recovery` | Admin | List recovery requests and suggested matches against stored Daraja payment records. |
 | `POST /admin/payment-recovery/{request_id}/review` | Admin | Explicitly grant access for a selected plan or reject with a required reason; writes an audit record atomically with the decision. |
 | `GET /admin/payment-recovery/audit` | Admin | List recent payment-recovery decisions and the administrator who made them. |
+| `GET /admin/jobs` | Admin | Read queue counts and the last 50 failed jobs. |
+| `POST /admin/jobs/{job_id}/retry` | Admin | Requeue a failed document job and reset its attempt/error state. |
 
 For `POST /chat`, send `scope_type: "document"` with `scope_id` set to a document UUID, or `scope_type: "folder"` with `scope_id` set to a knowledge-base UUID. `conversation_id` is optional for a new chat; when supplied, it must belong to the signed-in user and match the requested scope. The response contains the answer, saved conversation ID, and source list (document ID/name, page when known, and excerpt). Saved user messages expose `metadata.search_query` from the messages endpoint.
 
@@ -266,8 +276,9 @@ Set these as **backend/server** variables in Vercel Project Settings → Environ
 | `SUBSCRIPTIONS_ENFORCED` | Optional | Defaults to `false`. Set to `true` only after plans, live payments, and callbacks have been verified. |
 | `FRONTEND_ORIGIN` / `FRONTEND_URL` | Recommended | Public frontend origin used by CORS and as callback fallback. `FRONTEND_URL` is an accepted alias. Use the active deployed domain without a trailing slash. |
 | `FRONTEND_ORIGINS` | Optional | Additional comma-separated allowed frontend origins. |
-| `MAX_UPLOAD_MB` / `MAX_UPLOAD_SIZE_MB` | Optional setting | Accepted aliases, but the current application upload validator enforces a fixed 10 MB per-file cap. Setting this variable cannot raise that cap. |
+| `MAX_UPLOAD_MB` / `MAX_UPLOAD_SIZE_MB` | Optional setting | Per-file upload limit in MB; defaults to 10 and is clamped between 1 and the service ceiling of 50 MB. Set the same value for the Vercel API and Render worker. A host proxy may enforce a lower request limit. |
 | `MAX_EXTRACTED_CHARS` | Optional | Extracted-text bound; code caps it at 5,000,000 characters. |
+| `JOB_POLL_SECONDS` | Render worker optional | Seconds between queue polls when no job is ready; defaults to 3. |
 | `API_V1_PREFIX` | Optional | Defaults to `/api/v1`. Change only if routes and callback construction are intentionally reconfigured together. |
 
 The frontend normally uses the same-domain `/api/v1` path. `VITE_API_BASE_URL` is only for a frontend pointed to a separate API; leave it unset for the Vercel same-domain rewrite. Local development can use `VITE_DEV_API_PROXY_TARGET` or a local `VITE_API_BASE_URL`.
@@ -282,13 +293,15 @@ The frontend normally uses the same-domain `/api/v1` path. `VITE_API_BASE_URL` i
 
 ### Vercel deployment
 
-`vercel.json` describes two services: Vite frontend and FastAPI backend. It rewrites `/api/*` to the backend and the remaining routes to the frontend. It sets `Cross-Origin-Opener-Policy: same-origin-allow-popups` for Google popups and disables caching for the app entry pages while allowing hashed assets to be cached immutably.
+`vercel.json` describes two services: Vite frontend and FastAPI backend. It rewrites `/api/*` to the backend and the remaining routes to the frontend. It sets `Cross-Origin-Opener-Policy: same-origin-allow-popups` for Google popups and disables caching for the app entry pages while allowing hashed assets to be cached immutably. The Vercel API validates/stores uploads and queues work; it does not perform indexing or OCR during an API request.
 
-After adding or changing backend environment variables, redeploy the relevant Vercel deployment. A local `.env` does not change Vercel settings. The Vercel build preloads the embedding model under the backend service and validates its 384-dimensional output.
+The root `render.yaml` defines a separate long-lived Render Background Worker running the same backend repository code. Set its `DATABASE_URL` to the exact same PostgreSQL/Neon database URL used by the Vercel backend. Do not deploy `backend/worker.py` as a Vercel Function.
+
+After adding or changing backend environment variables, redeploy the relevant Vercel deployment. A local `.env` does not change Vercel settings. The Vercel build preloads the embedding model under the backend service and validates its 384-dimensional output. The Render worker installs `requirements-worker.txt`, installs `tesseract-ocr`, `tesseract-ocr-eng`, `tesseract-ocr-swa`, and `libheif-dev`, and runs `scripts/preload_embedding_model.py` as part of the build.
 
 ### Database migrations
 
-The SQLAlchemy schema is migrated with Alembic. Run `npm run migrate` from the repository root after pulling a change that adds or modifies a database table/column and before using that backend version. The migration script invokes Alembic from the backend directory. Migration history is in `backend/migrations/versions/`; current migrations include the initial schema, compatibility fixes for an existing Neon database, archive/pin fields, plans/payments, Google-only nullable passwords, payment recovery/audit tables, conversation scope, per-message search metadata, and the PostgreSQL full-text GIN index. The latest repository migration is `0012_document_chunk_fts_index.py`.
+The SQLAlchemy schema is migrated with Alembic. Run `npm run migrate` from the repository root after pulling a change that adds or modifies a database table/column and before using that backend version. The migration script invokes Alembic from the backend directory. Migration history is in `backend/migrations/versions/`; current migrations include the initial schema, compatibility fixes for an existing Neon database, archive/pin fields, plans/payments, Google-only nullable passwords, payment recovery/audit tables, conversation scope, per-message search metadata, the PostgreSQL full-text GIN index, and durable jobs/OCR columns. The latest repository migration is `0013_durable_jobs_and_ocr.py`.
 
 Do not run ad-hoc SQL to create the first administrator. Use the first-admin setup page and configured bootstrap code. The database migration is not a substitute for Google, Cloudinary, DeepSeek, or Daraja configuration.
 
@@ -299,6 +312,7 @@ Do not run ad-hoc SQL to create the first administrator. Use the first-admin set
 - The backend settings load repository `frontend/.env` and `backend/.env` (shell environment variables take precedence). Never commit either env file or place server secrets in frontend env files.
 - Configure a development API proxy or `VITE_API_BASE_URL` as described above.
 - Apply migrations before using the app against a fresh or changed database.
+- For asynchronous indexing locally, install `backend/requirements-worker.txt`, install Tesseract with `eng` and `swa` data plus libheif, set backend environment values, then run `python backend/worker.py` in a separate long-lived terminal. Run `python backend/worker.py` only after applying migration `0013`.
 
 ## 11. Security and privacy behavior
 
@@ -313,15 +327,15 @@ Do not run ad-hoc SQL to create the first administrator. Use the first-admin set
 
 ## 12. Limits and known operational considerations
 
-1. **Upload size and host proxy:** the application limit is 10 MB, but the active host may impose a lower request-body limit. An app-side setting cannot override the host proxy. Confirm the current Vercel project/plan limits if files near the application maximum fail before reaching FastAPI; larger uploads would need a direct-to-Cloudinary flow or supported host configuration.
-2. **No OCR:** scanned/image-only PDFs do not yield searchable text and processing fails with an explanatory status. OCR is not implemented.
-3. **No DOCX in the public uploader:** extraction code contains a DOCX branch, but file validation and the browser picker currently allow PDF/TXT only.
-4. **In-process processing:** persistent hosts can process uploads in a background task. Vercel processing is done during the upload request to avoid relying on a serverless process continuing after the response. Large workloads may need a durable job queue/worker if processing time or scale becomes a problem.
-5. **Provider reliability:** chat generation, Google token verification, Cloudinary storage, and M-Pesa checkout/callback all depend on external services and correct credentials/network access.
+1. **Upload size and host proxy:** the configured per-file cap defaults to 10 MB and can be changed with `MAX_UPLOAD_MB` up to the service hard ceiling of 50 MB. Vercel or another host may impose a lower request-body limit. Confirm the deployment limit if files near the configured maximum fail before reaching FastAPI.
+2. **Photo combination:** the browser combines multiple JPG/PNG selections into one PDF in order. HEIC uploads are supported for OCR, but the browser does not combine several HEIC files into a single PDF; select camera photos as JPG/PNG to combine them.
+3. **OCR quality:** OCR can misread blurred, rotated, low-resolution, handwritten, or complex-layout pages. The confidence warning is a guidance signal, not a guarantee that every word is correct. Review important text against the original.
+4. **Worker availability:** accepted uploads remain queued if the Render worker is stopped. Configure an alert/restart policy and inspect the admin Jobs section. The same database must be configured for API and worker; changing the schema requires migration `0013` before deployment.
+5. **Provider reliability:** chat generation, Google token verification, Cloudinary storage, M-Pesa checkout/callback, and OCR depend on external services or worker packages/system data and correct configuration.
 6. **Google error diagnosis:** browser messages about Cross-Origin-Opener-Policy can be informational depending on popup behavior; an `/auth/google` 500 is a backend issue. Read the HTTP response and Vercel backend logs; confirm `GOOGLE_CLIENT_ID`, Google authorized origins, deployed `google-auth` dependency, database connectivity, and applied migrations. Do not treat the browser COOP warning alone as proof of a failed configuration.
 7. **Payment activation:** do not enable enforced subscriptions until an active plan, valid live Daraja setup, public callback, successful payment confirmation, and reconciliation process have been checked.
 8. **Recent activity retention:** the activity feed queries recent underlying records; it is not a separate permanent audit/event ledger.
-9. **Product QA:** documentation of a code path is not a claim that every external account, production secret, callback, or deployed environment has been independently verified. Use the checklist below for a real production readiness pass.
+9. **Product QA:** code documentation is not proof that every external account, production secret, callback, or deployed environment has been independently verified. Use the checklist below for a real production readiness pass.
 
 ## 13. Repository map
 
@@ -335,12 +349,15 @@ frontend/
   src/pdfExport.ts            Answer and saved-conversation PDF generation
   src/style.css               Application layout, responsive styles, and visual themes
 backend/
+  worker.py                   Long-running Render job poller and processor
+  requirements-worker.txt     OCR/PDF/image worker dependencies
   app/api/v1/endpoints/       FastAPI auth, folder, file, chat, admin, billing endpoints
-  app/services/               Auth, extraction, indexing, retrieval, AI, storage, Daraja
+  app/services/               Auth, extraction/OCR, indexing, job queue, retrieval, AI, storage, Daraja
   app/models/entities.py      Database entities and relationships
   app/schemas/                API validation and response schemas
   app/core/config.py          Environment settings and fixed upload/extraction caps
   migrations/versions/        Alembic database schema history
+render.yaml                   Render Background Worker deployment blueprint
 scripts/
   migrate.mjs                 Repository-level migration command
 vercel.json                   Vercel service routing and response headers
@@ -354,6 +371,10 @@ backend/ENV_SETUP.md          Existing environment and deployment notes
 
 - [ ] Confirm Vercel frontend and backend services both build from the intended branch/commit.
 - [ ] Apply the latest Alembic migration to the production database.
+- [ ] Create the Render Background Worker from `render.yaml`; set `DATABASE_URL` to exactly the same database used by Vercel, and set the same `MAX_UPLOAD_MB` value and a strong `JWT_SECRET_KEY`.
+- [ ] Confirm the Render build installed Tesseract, `eng` and `swa` language data, and libheif; confirm the worker starts and remains online.
+- [ ] Upload a normal PDF, a scanned PDF, a DOCX, a JPG/PNG photo, and a HEIC photo; confirm HTTP 202, queue completion, progress stages, OCR confidence, and an answer grounded in the indexed document.
+- [ ] Stop the worker briefly, upload a test file, restart the worker, and verify the queued job is reclaimed and completed. Exercise retry and terminal failure from the admin Jobs area.
 - [ ] Confirm the production origin is consistent across `FRONTEND_ORIGIN`, CORS, Google authorized origins, and Daraja callback base URL.
 - [ ] Confirm the Google web client ID and its authorized origin; test both new-account and existing-account Google sign-in.
 - [ ] Confirm a private first-admin code was used once, then remove or rotate it; test admin sign-in and ensure public users cannot access admin endpoints.
@@ -364,9 +385,44 @@ backend/ENV_SETUP.md          Existing environment and deployment notes
 - [ ] Verify the callback marks a successful payment paid and activates the corresponding subscription; verify failed/cancelled callbacks do not grant access.
 - [ ] Submit a member payment recovery request and confirm it stays pending; review a candidate match, manually grant or reject, and verify the audit record and member-visible result.
 - [ ] Decide whether to set `SUBSCRIPTIONS_ENFORCED=true` only after payment flow verification.
-- [ ] Test supported PDF/TXT upload, invalid type, over-limit file, processing failure, chat without selected file, chat answer citations, conversation history, and PDF export.
+- [ ] Test every accepted file type, invalid type, configured size limit, OCR fallback/low-confidence warning, worker retry/failure, chat without selected file, chat answer citations, conversation history, and PDF export.
 - [ ] Test the registration, login, workspace, billing, and admin screens on narrow mobile and desktop widths.
 - [ ] Check Vercel backend logs for unhandled errors and verify secrets are not printed in them.
+
+## 15. Phase 2: important dates and reminders
+
+After a document becomes ready, the Render worker queues an `extract_events` job. The job reads page-numbered indexed text in bounded chunks and asks the configured DeepSeek model for JSON suggestions. It stores only suggestions whose exact source quote is present in the page text, whose quoted date agrees with the returned date, and whose confidence is between 0 and 1. Relative dates are resolved only for supported day-count phrases when an exact calendar-date base is also quoted in the same text chunk. Unsupported or unclear date expressions are skipped. Dates more than 30 days in the past are discarded. Provider and database failures use the durable job retry policy.
+
+Suggestions remain `suggested` until the member confirms them. Each suggestion shows its exact source excerpt, page (when available), confidence, and the instruction “Check this date against the original document.” This is an aid for review, not a legal determination. The selected document shows its Important dates panel; Upcoming dates in the workspace lists active suggestions and confirmed items across the account. Members can edit and confirm, dismiss, mark a confirmed date done, snooze a pending reminder, and export an individual event as an `.ics` calendar file.
+
+Confirming an event creates in-app reminders and email reminders for enabled channels at the configured lead times (defaults: 14, 7, and 1 days). Dates whose reminder times have already passed are not scheduled retroactively. Dismissed and completed dates cancel pending reminders. The preference record supports enabled channels, lead days, quiet-hour start/end, and an IANA timezone; the default timezone is `Africa/Nairobi`. Quiet-hour delivery is moved to the next quiet-hour end in that timezone. WhatsApp and SMS are not enabled yet; the `NotificationChannel` protocol leaves a clean adapter point for them.
+
+The worker takes a PostgreSQL advisory transaction lock to enqueue at most one `send_due_reminders` job per UTC minute. Reminder rows are selected with `FOR UPDATE SKIP LOCKED`, then marked sent or failed. Failed deliveries are retried with exponential delay. In-app reminders are stored and visible in the Upcoming dates page. Email uses the SMTP adapter and these backend-only environment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `SMTP_HOST` | SMTP server hostname; required for email delivery |
+| `SMTP_PORT` | SMTP port; defaults to `587` |
+| `SMTP_USER` | SMTP username; optional if the server permits unauthenticated delivery |
+| `SMTP_PASSWORD` | SMTP password; never expose in browser variables |
+| `SMTP_FROM` | Sender address; defaults to `SMTP_USER` |
+| `SMTP_STARTTLS` | Enable STARTTLS; defaults to `true` |
+
+Apply Alembic migrations `0014` and `0015` before deploying the updated API and worker. Migration `0014` creates `document_events`, `reminders`, and `notification_preferences`; `0015` repairs missing legacy conversation columns and indexes chat history. The endpoints are `GET /documents/{document_id}/events`, `GET /events/upcoming`, `POST /events/{id}/confirm`, `/dismiss`, `/done`, and `/snooze`, `POST /reminders/{id}/snooze`, `GET /events/{id}/ics`, `GET /notifications`, and `GET/PUT /notification-preferences`. All event and reminder reads and changes are scoped to the authenticated owner. No event is confirmed and no reminder is created by extraction alone.
+
+The workspace loads chat history when a folder is expanded instead of blocking initial startup on that optional request. The history endpoint returns the latest 200 chats per account and uses a composite index. Upload limits are fetched only when the upload panel opens, removing that request from normal startup.
+
+Email delivery uses an SMTP adapter with a stable per-reminder Message-ID and database row locking to prevent concurrent workers from delivering the same pending row. SMTP itself does not provide a universal exactly-once guarantee if a worker process is killed after the mail server accepts a message but before the database records success; deployment with a provider that supports idempotency keys can strengthen that crash-recovery boundary.
+
+### Phase 2 release checklist
+
+- [ ] Apply migrations `0014` and `0015` to the same production Postgres database used by the API and worker.
+- [ ] Add SMTP settings to the Render backend/worker environment (never `VITE_*`), and verify email delivery with a controlled test account.
+- [ ] Ensure the worker deployment uses the updated commit and shared `DATABASE_URL`; check it processes `extract_events` and recurring `send_due_reminders` jobs.
+- [ ] Index a document with an explicit date, an anchored “N days after” obligation, a relative date without a base date, and unrelated dates. Verify only source-backed events appear with correct page excerpts.
+- [ ] Confirm a suggestion and verify reminder rows use the preference timezone/lead times; dismiss another and verify no reminder is created.
+- [ ] Test quiet hours across midnight, email failure retry, in-app reminder visibility, snooze, mark done, and `.ics` export.
+- [ ] Review dates against their original document and do not present model suggestions as certain legal deadlines.
 
 ### Helpful support information (safe to share)
 

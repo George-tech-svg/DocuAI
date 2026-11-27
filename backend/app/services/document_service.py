@@ -11,17 +11,15 @@ from app.models.document_chunk import DocumentChunk
 from app.models.knowledge_base import KnowledgeBase
 from app.services.knowledge_base_service import get_knowledge_base, KnowledgeBaseNotFoundError
 from app.services.file_validation import validate_upload
-from app.services.extraction import extract_pages
+from app.services.ocr import extract_document
 from app.services.chunking import chunk_pages
 from app.services.embeddings import iter_embedding_batches
-from app.services.storage import store_file, delete_file
 from app.core.config import max_extracted_chars, max_upload_mb
 
 logger = logging.getLogger(__name__)
 
 def owned_kb(db, user_id, kb_id):
     """Ensure the requested knowledge base belongs to the current user."""
-    stored = None
     try:
         return get_knowledge_base(db, user_id, kb_id)
     except KnowledgeBaseNotFoundError:
@@ -35,8 +33,8 @@ def owned_document(db, user_id, kb_id, doc_id):
         raise HTTPException(404, 'Document not found')
     return d
 
-def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes, document_id=None):
-    """Store document metadata, extract text, generate embeddings, and update status."""
+def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes, document_id=None, raise_on_error: bool = False):
+    """Extract/index an already stored original; a durable worker calls this."""
     owned_kb(db, user_id, kb_id)
     name, mime = validate_upload(filename, data, max_upload_mb())
     if document_id is None:
@@ -51,17 +49,30 @@ def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes, docu
             return None
     overall_started = perf_counter()
     processing_document_id = doc.id
-    # Uploads may fail during extraction or embedding, before Cloudinary has
-    # returned anything. Keep this initialized so the failure handler itself
-    # cannot raise UnboundLocalError and strand the document as pending.
-    stored = None
     try:
         doc.status = 'processing'
+        doc.progress_stage = 'extracting'
+        doc.processing_error = None
+        doc.ocr_used = False
+        doc.ocr_confidence = None
+        db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == processing_document_id))
         db.commit()
         logger.info('Document %s processing started (%s bytes).', processing_document_id, len(data))
         stage_started = perf_counter()
         logger.info('Document %s: extracting text.', processing_document_id)
-        pages = extract_pages(name, data)
+        def mark_ocr_stage():
+            current = db.get(Document, processing_document_id)
+            if current:
+                current.progress_stage = 'ocr'
+                current.updated_at = datetime.now(timezone.utc)
+                db.commit()
+
+        extracted = extract_document(name, data, on_ocr=mark_ocr_stage)
+        pages = extracted['pages']
+        doc = db.get(Document, processing_document_id)
+        doc.ocr_used = extracted['ocr_used']
+        doc.ocr_confidence = extracted['ocr_confidence']
+        db.commit()
         logger.info('Document %s: extracted %s page(s) in %.1f seconds.', processing_document_id, len(pages), perf_counter() - stage_started)
         extracted_chars = sum(len(text) for _, text in pages)
         if extracted_chars > max_extracted_chars():
@@ -72,10 +83,14 @@ def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes, docu
         stage_started = perf_counter()
         chunks = chunk_pages(pages)
         if not chunks:
-            raise ValueError('No extractable text found. Scanned PDFs require OCR.')
+            if extracted['ocr_failures']:
+                raise ValueError(extracted.get('ocr_error') or 'We could not read text from this file. Try a clearer PDF or image, or use a text-based document.')
+            raise ValueError('No readable text was found in this file. Please check the document and try again.')
         logger.info('Document %s: created %s text chunk(s).', processing_document_id, len(chunks))
         stage_started = perf_counter()
         logger.info('Document %s: generating embeddings in batches.', processing_document_id)
+        doc.progress_stage = 'embedding'
+        db.commit()
         for batch_start in range(0, len(chunks), 32):
             batch_chunks = chunks[batch_start:batch_start + 32]
             batch_contents = [content for _, content in batch_chunks]
@@ -98,16 +113,10 @@ def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes, docu
             doc.updated_at = datetime.now(timezone.utc)
             db.commit()
         logger.info('Document %s: generated embeddings in %.1f seconds.', processing_document_id, perf_counter() - stage_started)
-        stage_started = perf_counter()
-        logger.info('Document %s: saving original file to Cloudinary.', processing_document_id)
-        stored = store_file(name, data)
-        logger.info('Document %s: Cloudinary save finished in %.1f seconds.', processing_document_id, perf_counter() - stage_started)
-        doc.cloudinary_public_id = stored['public_id']
-        doc.cloudinary_resource_type = stored['resource_type']
-        doc.storage_url = stored['url']
         doc.page_count = len(pages)
         doc.chunk_count = len(chunks)
         doc.status = 'ready'
+        doc.progress_stage = 'ready'
         doc.processed_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(doc)
@@ -118,17 +127,19 @@ def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes, docu
         # expired ORM object after a failed flush can raise PendingRollbackError.
         db.rollback()
         logger.exception('Document processing failed for document %s', processing_document_id)
-        if stored:
-            try:
-                delete_file(stored['public_id'], stored['resource_type'])
-            except Exception:
-                pass
         db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == processing_document_id))
+        if db.get(Document, processing_document_id) is None:
+            db.commit()
+            return None
+        if raise_on_error:
+            db.commit()
+            raise
         result = db.execute(
             Document.__table__.update()
             .where(Document.id == processing_document_id)
             .values(
                 status='failed',
+                progress_stage='extracting',
                 processing_error=str(exc)[:500] or 'Document processing failed.',
                 updated_at=datetime.now(timezone.utc),
             )

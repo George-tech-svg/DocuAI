@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CreditCard,
+  CalendarDays,
   Download,
   HelpCircle,
   FileText,
@@ -32,6 +33,7 @@ const AdminDashboard = lazy(() => import("./AdminDashboard"));
 const BillingPage = lazy(() => import("./BillingPage"));
 const TermsPrivacy = lazy(() => import("./TermsPrivacy"));
 const GoogleSignIn = lazy(() => import("./GoogleSignIn"));
+const ImportantDates = lazy(() => import("./ImportantDates"));
 import { downloadAnswerPdf, downloadConversationPdf, downloadConversationsPdf } from "./pdfExport";
 import type {
   AuthenticationResponse,
@@ -62,25 +64,25 @@ type DeleteDialogState = {
 
 function friendlyProcessingError(reason: string | null): string {
   const normalized = (reason ?? "").toLowerCase();
-  if (normalized.includes("no extractable text") || normalized.includes("scanned pdf") || normalized.includes("ocr")) {
-    return "This PDF has no selectable text. Scanned or image-only PDFs are not supported. Try a text-based PDF or TXT file.";
+  if (normalized.includes("could not read text") || normalized.includes("no readable text")) {
+    return "We could not read the text clearly. Try a clearer scan or photo, or upload a text-based document.";
   }
   if (normalized.includes("too large") || normalized.includes("maximum") || normalized.includes("characters")) {
-    return "This file is too large to process. Choose a PDF or TXT file under 10 MB with less text.";
+    return "This file is too large to process. Choose a smaller supported file.";
   }
   if (normalized.includes("cloudinary") || normalized.includes("storage is not configured")) {
     return "The file could not be saved. Document storage may need attention. Please try again later or contact support.";
   }
   if (normalized.includes("invalid pdf") || normalized.includes("pdf header") || normalized.includes("damaged")) {
-    return "This PDF could not be opened. It may be damaged or password-protected. Try another text-based PDF or TXT file.";
+    return "This file could not be opened. It may be damaged or password-protected. Try another supported file.";
   }
-  return "We could not read or process this file. It may be damaged, protected, or contain no selectable text. Try another text-based PDF or TXT file.";
+  return "We could not read or process this file. It may be damaged, protected, or unreadable. Try another supported file.";
 }
 
 function friendlyUploadError(error: unknown): string {
   const message = getErrorMessage(error);
   if (/\b413\b/.test(message)) {
-    return "The upload service could not accept this file because it is too large. Choose a smaller PDF or TXT file under 10 MB.";
+    return "The upload service could not accept this file because it is too large. Choose a smaller supported file.";
   }
   if (/network error/i.test(message)) {
     return "Network error. Please check your connection and try again.";
@@ -162,7 +164,7 @@ export default function App() {
     localStorage.getItem("documind_token") ?? ""
   );
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [activePage, setActivePage] = useState<"workspace" | "admin" | "billing" | "settings">("workspace");
+  const [activePage, setActivePage] = useState<"workspace" | "admin" | "billing" | "settings" | "upcoming">("workspace");
   const [legalPage, setLegalPage] = useState<"terms" | "privacy" | null>(null);
   const [isRegistering, setIsRegistering] = useState(false);
   const [fullName, setFullName] = useState("");
@@ -207,6 +209,7 @@ export default function App() {
   const [expandedDocumentIds, setExpandedDocumentIds] = useState<Set<string>>(() => new Set());
   const [folderDocuments, setFolderDocuments] = useState<Record<string, { items: DocumentRecord[]; loading: boolean; error: string }>>({});
   const [isUploadPanelOpen, setIsUploadPanelOpen] = useState(false);
+  const [uploadLimitMb, setUploadLimitMb] = useState(10);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const savedWidth = Number(localStorage.getItem("documind_sidebar_width"));
@@ -217,6 +220,7 @@ export default function App() {
   const [newKnowledgeBaseName, setNewKnowledgeBaseName] = useState("");
   const [conversationHistory, setConversationHistory] = useState<ConversationRecord[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
 
   // Chat messages and current conversation.
   const [question, setQuestion] = useState("");
@@ -234,6 +238,8 @@ export default function App() {
   const [uploadError, setUploadError] = useState("");
   const [uploadSuccess, setUploadSuccess] = useState("");
   const uploadInputRef = useRef<HTMLInputElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState | null>(null);
 
   useEffect(() => { localStorage.setItem("documind_sidebar_width", String(sidebarWidth)); }, [sidebarWidth]);
@@ -265,12 +271,14 @@ export default function App() {
   async function refreshConversationHistory() {
     if (!token) {
       setConversationHistory([]);
+      setHistoryLoaded(false);
       return;
     }
     setIsHistoryLoading(true);
     try {
       const history = await request<ConversationRecord[]>("/conversations", token);
       setConversationHistory(history);
+      setHistoryLoaded(true);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -320,6 +328,10 @@ export default function App() {
     });
     if (isExpanded) return;
 
+    // Chat history is only needed after opening a folder. Keep the initial
+    // workspace render independent of this larger, optional request.
+    if (!historyLoaded && !isHistoryLoading) void refreshConversationHistory();
+
     setFolderDocuments((previous) => ({
       ...previous,
       [knowledgeBaseId]: { items: previous[knowledgeBaseId]?.items ?? [], loading: true, error: "" },
@@ -349,7 +361,8 @@ export default function App() {
   // Refresh data after login or when the selected knowledge base changes.
   useEffect(() => {
     void refreshKnowledgeBases();
-    void refreshConversationHistory();
+    setConversationHistory([]);
+    setHistoryLoaded(false);
   }, [token]);
 
   useEffect(() => {
@@ -366,6 +379,19 @@ export default function App() {
     setMessages([]);
     setConversationId(null);
   }, [token, selectedKnowledgeBaseId]);
+
+  async function openUploadPanel() {
+    setUploadError("");
+    setUploadSuccess("");
+    setIsUploadPanelOpen(true);
+    if (!selectedKnowledgeBaseId) return;
+    try {
+      const config = await request<{ max_upload_mb: number }>(`/knowledge-bases/${selectedKnowledgeBaseId}/documents/upload-config`, token);
+      setUploadLimitMb(config.max_upload_mb);
+    } catch (error) {
+      setUploadError(getErrorMessage(error));
+    }
+  }
 
   // Uploads are indexed in the background; poll until the saved status changes.
   const hasProcessingDocuments = documents.some(
@@ -387,7 +413,7 @@ export default function App() {
       } catch {
         // Keep the last known document statuses; the next poll can recover.
       }
-    }, 15_000);
+    }, 3_000);
     return () => window.clearInterval(timer);
   }, [token, selectedKnowledgeBaseId, hasProcessingDocuments]);
 
@@ -700,25 +726,47 @@ export default function App() {
 
   /** Upload selected files one by one and report any that fail. */
   async function handleUpload(event: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files ?? []);
-    if (!files.length || !selectedKnowledgeBaseId) return;
+    const selectedFiles = Array.from(event.target.files ?? []);
+    if (!selectedFiles.length || !selectedKnowledgeBaseId) return;
 
     setIsBusy(true);
-    setBusyMessage(`Preparing ${files.length} file${files.length === 1 ? "" : "s"}...`);
+    setBusyMessage(`Preparing ${selectedFiles.length} file${selectedFiles.length === 1 ? "" : "s"}...`);
     setUploadError("");
     setUploadSuccess("");
+    const mergeablePhotos = selectedFiles.filter((file) => /\.(jpe?g|png)$/i.test(file.name));
+    let combinedPhotos: File | null = null;
+    if (mergeablePhotos.length > 1) {
+      try {
+        combinedPhotos = await import("./photoPdf").then(({ combinePhotosIntoPdf }) => combinePhotosIntoPdf(mergeablePhotos));
+      } catch (error) {
+        setUploadError(`${getErrorMessage(error)} Select JPG or PNG photos and try again.`);
+        setIsBusy(false);
+        event.target.value = "";
+        return;
+      }
+    }
+    const files: File[] = [];
+    let photosInserted = false;
+    for (const file of selectedFiles) {
+      if (combinedPhotos && /\.(jpe?g|png)$/i.test(file.name)) {
+        if (!photosInserted) files.push(combinedPhotos);
+        photosInserted = true;
+      } else files.push(file);
+    }
+
+    setBusyMessage(`Preparing ${files.length} file${files.length === 1 ? "" : "s"}...`);
 
     let uploaded = 0;
     const failures: string[] = [];
     try {
       for (const [index, file] of files.entries()) {
         setBusyMessage(`Uploading file ${index + 1} of ${files.length}: ${file.name}`);
-        if (!/\.(pdf|txt)$/i.test(file.name)) {
-          failures.push(`${file.name}: Invalid file type. Please choose a PDF or TXT file.`);
+        if (!/\.(pdf|txt|docx|jpe?g|png|heic)$/i.test(file.name)) {
+          failures.push(`${file.name}: Invalid file type. Please choose a PDF, TXT, DOCX, JPG, PNG, or HEIC file.`);
           continue;
         }
-        if (file.size > 10_000_000) {
-          failures.push(`${file.name}: This file is too large. The maximum size is 10 MB.`);
+        if (file.size > uploadLimitMb * 1_000_000) {
+          failures.push(`${file.name}: This file is too large. The maximum size is ${uploadLimitMb} MB.`);
           continue;
         }
         const formData = new FormData();
@@ -745,7 +793,7 @@ export default function App() {
         const remaining = failures.length > 3 ? `; and ${failures.length - 3} more` : "";
         setUploadError(uploaded ? `${uploaded} of ${files.length} files uploaded. ${shownFailures}${remaining}` : `${shownFailures}${remaining}`);
       } else if (uploaded) {
-        setUploadSuccess(`${uploaded} file${uploaded === 1 ? "" : "s"} ${uploaded === 1 ? "was" : "were"} uploaded. Files may take a little time to finish processing.`);
+        setUploadSuccess(`${uploaded} document${uploaded === 1 ? " was" : "s were"} uploaded. Processing continues in the background.`);
       }
     } catch (error) {
       setUploadError(friendlyUploadError(error));
@@ -826,14 +874,15 @@ export default function App() {
 
       setDeleteDialog(null);
       if (pending.target.kind === "document") {
+        const knowledgeBaseId = pending.target.knowledgeBaseId;
         if (selectedDocumentId === pending.target.document.id) {
           setSelectedDocumentId(""); setConversationId(null); setMessages([]);
         }
         void refreshDocuments();
         void refreshConversationHistory();
         try {
-          const refreshed = await request<DocumentListResponse>(`/knowledge-bases/${pending.target.knowledgeBaseId}/documents`, token);
-          setFolderDocuments((previous) => ({ ...previous, [pending.target.knowledgeBaseId]: { items: refreshed.items, loading: false, error: "" } }));
+          const refreshed = await request<DocumentListResponse>(`/knowledge-bases/${knowledgeBaseId}/documents`, token);
+          setFolderDocuments((previous) => ({ ...previous, [knowledgeBaseId]: { items: refreshed.items, loading: false, error: "" } }));
         } catch (error) {
           setErrorMessage(getErrorMessage(error));
         }
@@ -899,7 +948,7 @@ export default function App() {
       return;
     }
     if (chatScope === "folder" && readyFolderDocuments.length === 0) {
-      setErrorMessage("This folder has no ready documents yet. Upload a PDF or TXT file and wait until it is ready before chatting.");
+      setErrorMessage("This folder has no ready documents yet. Upload a PDF, TXT, DOCX, JPG, PNG, or HEIC file and wait until it is ready before chatting.");
       return;
     }
     if (chatScope === "document" && !selectedDocumentId) {
@@ -1107,6 +1156,7 @@ export default function App() {
 
   if (activePage === "admin") return <Suspense fallback={<div className="app-loading" role="status">Loading admin tools…</div>}><AdminDashboard token={token} onBack={() => setActivePage("workspace")} /></Suspense>;
   if (activePage === "billing") return <Suspense fallback={<div className="app-loading" role="status">Loading billing…</div>}><BillingPage token={token} onBack={() => setActivePage("workspace")} /></Suspense>;
+  if (activePage === "upcoming") return <Suspense fallback={<div className="app-loading" role="status">Loading important dates…</div>}><ImportantDates token={token} upcoming onBack={() => setActivePage("workspace")} /></Suspense>;
 
   const selectedKnowledgeBase = knowledgeBases.find(
     (knowledgeBase) => knowledgeBase.id === selectedKnowledgeBaseId
@@ -1262,7 +1312,7 @@ export default function App() {
                               {document.is_archived && <small>archived</small>}
                               {document.is_pinned && <Pin size={12} aria-label="Pinned" />}
                               {document.status !== "ready" && (
-                                <small>{document.status === "pending" ? "waiting" : document.status}</small>
+                                <small>{document.status === "pending" || document.status === "processing" ? `Processing: ${document.progress_stage}` : document.status}</small>
                               )}
                             </button>
                             <ItemActionMenu
@@ -1285,6 +1335,9 @@ export default function App() {
                                 Delete and try another file
                               </button>
                             </div>
+                          )}
+                          {document.status === "ready" && document.low_ocr_confidence && (
+                            <div className="ocr-quality-warning" role="status">Some scanned text may be unclear{document.ocr_confidence !== null ? ` (${Math.round(document.ocr_confidence)}% OCR confidence)` : ""}. Check important details against the original.</div>
                           )}
                           {isDocumentExpanded && (
                             <div className="document-chat-list" aria-label={`Chats about ${document.original_filename}`}>
@@ -1337,6 +1390,9 @@ export default function App() {
 
         <div className="sidebottom">
           <div className="workspace-label"><ShieldCheck size={16} /> Private workspace</div>
+          <button type="button" onClick={() => { setActivePage("upcoming"); setIsMobileSidebarOpen(false); }}>
+            <CalendarDays size={17} /> Upcoming dates
+          </button>
           <button type="button" onClick={() => { setActivePage("billing"); setIsMobileSidebarOpen(false); }}>
             <CreditCard size={17} /> Plan &amp; billing
           </button>
@@ -1414,11 +1470,17 @@ export default function App() {
               <button className="chat-tool-button" type="button" onClick={() => setIsHelpPanelOpen(true)} title="Help and examples" aria-label="Open help and examples">
                 <HelpCircle size={17} />
               </button>
-              <button className="upload-trigger" onClick={() => setIsUploadPanelOpen(true)} disabled={!selectedKnowledgeBaseId}>
+              <button className="upload-trigger" onClick={() => void openUploadPanel()} disabled={!selectedKnowledgeBaseId}>
                 <Upload size={17} /> Add files
               </button>
             </div>
           </div>
+
+          {selectedDocument && selectedDocument.status === "ready" && (
+            <Suspense fallback={<div className="important-dates-loading" role="status">Loading important dates…</div>}>
+              <ImportantDates token={token} documentId={selectedDocument.id} />
+            </Suspense>
+          )}
 
           {errorMessage && (
             <div className="error banner" role="alert">
@@ -1428,7 +1490,7 @@ export default function App() {
           )}
 
           {chatScope === "folder" && selectedKnowledgeBase && !selectedFolderDocumentsLoading && readyFolderDocuments.length === 0 && (
-            <div className="folder-no-ready" role="status">This folder has no ready documents yet. Upload a PDF or TXT file and wait until it is ready, then ask a question across the folder.</div>
+            <div className="folder-no-ready" role="status">This folder has no ready documents yet. Upload a PDF, TXT, DOCX, JPG, PNG, or HEIC file and wait until it is ready, then ask a question across the folder.</div>
           )}
 
           <div className="messages">
@@ -1442,7 +1504,7 @@ export default function App() {
                     ? <>Folder mode searches all ready documents in <strong>{selectedKnowledgeBase.name}</strong>. Choose <strong>This document</strong> to focus on one selected file. Answers show source file names and page numbers.</>
                     : selectedDocumentId
                       ? <>Document mode searches only <strong>{selectedDocument?.original_filename}</strong>. Choose <strong>This folder</strong> to search across every ready document in <strong>{selectedKnowledgeBase?.name}</strong>. Your chats stay under their selected scope.</>
-                      : <><strong>Hello {userProfile?.full_name.trim().split(/\s+/)[0] || "there"}</strong>, choose a folder to use <strong>This folder</strong> and search across its ready documents, or select a file and use <strong>This document</strong> to focus on that file. <span className="desktop-file-location">Your folders and files are in the left sidebar.</span><span className="mobile-file-location">Tap the folder button at the top to open the file list.</span> Upload a PDF or TXT file if you have not added one yet.</>}</p>}
+                      : <><strong>Hello {userProfile?.full_name.trim().split(/\s+/)[0] || "there"}</strong>, choose a folder to use <strong>This folder</strong> and search across its ready documents, or select a file and use <strong>This document</strong> to focus on that file. <span className="desktop-file-location">Your folders and files are in the left sidebar.</span><span className="mobile-file-location">Tap the folder button at the top to open the file list.</span> Upload PDF, TXT, DOCX, JPG, PNG, or HEIC files if you have not added one yet.</>}</p>}
                 {!selectedKnowledgeBase && <button className="mobile-open-files" type="button" onClick={() => setIsMobileSidebarOpen(true)}><Menu size={15} /> Open file list</button>}
                 {hasValidChatScope && (
                   <div className="prompt-suggestions">
@@ -1555,16 +1617,22 @@ export default function App() {
             <div className="upload-panel-heading">
               <div>
                 <h2 id="upload-title">Files in {selectedKnowledgeBase?.name ?? "this folder"}</h2>
-                <p>Supported: text-based PDF or TXT · maximum 10 MB per file</p>
+                <p>PDF, TXT, DOCX, JPG, PNG, or HEIC · maximum {uploadLimitMb} MB per file</p>
               </div>
               <button className="icon-button" aria-label="Close uploads" onClick={() => setIsUploadPanelOpen(false)} disabled={isBusy}><X /></button>
             </div>
             <label className={`upload ${isBusy ? "disabled" : ""}`}>
               <Upload size={21} />
               <strong>{isBusy ? busyMessage : "Choose files to upload"}</strong>
-              <small>Files are added to the selected folder. Scanned or image-only PDFs are not supported; the PDF must contain selectable text.</small>
-              <input ref={uploadInputRef} type="file" accept=".pdf,.txt" multiple onChange={handleUpload} disabled={isBusy} />
+              <small>Scanned PDFs and photos are read with OCR. Clear scans work best. Select several JPG/PNG photos to combine them into one PDF in the order selected.</small>
+              <input ref={uploadInputRef} type="file" accept=".pdf,.txt,.docx,.jpg,.jpeg,.png,.heic" multiple onChange={handleUpload} disabled={isBusy} />
             </label>
+            <div className="photo-upload-actions">
+              <button type="button" onClick={() => photoInputRef.current?.click()} disabled={isBusy}>Select photos</button>
+              <button type="button" className="take-photo-action" onClick={() => cameraInputRef.current?.click()} disabled={isBusy}>Take photo</button>
+              <input ref={photoInputRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,.heic" multiple onChange={handleUpload} disabled={isBusy} aria-label="Select several photos" />
+              <input ref={cameraInputRef} className="visually-hidden" type="file" accept="image/*" capture="environment" multiple onChange={handleUpload} disabled={isBusy} aria-label="Take photos with your camera" />
+            </div>
             {uploadError && <div className="error banner upload-error" role="alert"><span>{uploadError}</span><button className="upload-try-another" type="button" disabled={isBusy} onClick={() => { if (uploadInputRef.current) uploadInputRef.current.value = ""; uploadInputRef.current?.click(); }}>Delete and try another file</button></div>}
             {uploadSuccess && <div className="success banner upload-success" role="status">{uploadSuccess}</div>}
             <div className="filelist upload-filelist">
@@ -1573,8 +1641,11 @@ export default function App() {
                   <FileText size={20} />
                   <div>
                     <strong title={document.original_filename}>{document.original_filename}</strong>
-                    <small>{document.status} · {document.chunk_count} passages · {(document.file_size_bytes / 1024).toFixed(0)} KB</small>
+                    <small>{document.status === "pending" || document.status === "processing" ? `Processing · ${document.progress_stage}` : document.status} · {document.chunk_count} passages · {(document.file_size_bytes / 1024).toFixed(0)} KB</small>
+                    {(document.status === "pending" || document.status === "processing") && document.processing_error && <small className="document-retry-note" role="status">A retry is scheduled: {friendlyProcessingError(document.processing_error)}</small>}
+                    {document.status === "ready" && document.low_ocr_confidence && <small className="ocr-quality-warning" role="status">OCR confidence is low{document.ocr_confidence !== null ? ` (${Math.round(document.ocr_confidence)}%)` : ""}. Some text may be unclear.</small>}
                     {document.status === "failed" && <small className="error document-error">{friendlyProcessingError(document.processing_error)}</small>}
+                    {(document.status === "pending" || document.status === "processing") && document.processing_error && <small className="document-retry-note" role="status">A retry is scheduled: {friendlyProcessingError(document.processing_error)}</small>}
                   </div>
                   {document.status === "failed" ? (
                     <button className="failed-upload-action" type="button" onClick={() => handleDeleteDocument(selectedKnowledgeBaseId, document)} aria-label={`Delete ${document.original_filename} and try another file`}>Delete and try another file</button>

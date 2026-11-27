@@ -12,6 +12,8 @@ See [PRODUCT_VISION_KENYA.md](PRODUCT_VISION_KENYA.md) for the education-first p
 - `backend/app/models/` — SQLAlchemy database tables.
 - `backend/app/schemas/` — Pydantic input and output validation.
 - `backend/app/services/` — Document processing, embeddings, retrieval, and AI logic.
+- `backend/worker.py` — Long-lived PostgreSQL queue worker for indexing and OCR.
+- `render.yaml` — Render Background Worker deployment definition.
 - `backend/sql/` — Schema reference for a **new, empty database only**.
 - `backend/tests/` — Small unit tests.
 - `frontend/src/` — React user interface and API client.
@@ -35,6 +37,8 @@ Review `backend/ENV_SETUP.md` to confirm the local credential names. Then run:
 python -m uvicorn app.main:app --reload
 ```
 
+For local document processing, also install `requirements-worker.txt`, install Tesseract with `eng` and `swa` language data and libheif, apply the database migrations, then run `python worker.py` from `backend/` in a third terminal. Without the worker, accepted uploads remain queued.
+
 ## Create or update the Neon schema
 
 After installing the backend requirements and configuring `DATABASE_URL` for Neon, run `npm run migrate` from the repository root or from `frontend/`. This applies the versioned Alembic migrations, creates missing tables, and safely adds compatible missing columns. It does not drop tables or rows. If a required new column needs real values for existing rows, the migration stops and identifies the column so it can be backfilled before rerunning.
@@ -56,18 +60,18 @@ Frontend: http://localhost:3000
 ## How document Q&A works
 
 1. User logs in and creates a knowledge base.
-2. User uploads a text-based PDF or TXT file (up to 10 MB; indexing runs during the Vercel upload request and in the background on persistent hosts).
-3. Backend extracts text and splits it into chunks.
-4. FastEmbed runs the MiniLM ONNX model to generate 384-dimensional embeddings; PostgreSQL pgvector stores them.
-5. A question is embedded and both vector similarity and PostgreSQL full-text keyword search find candidates within the selected document or folder.
-6. Reciprocal-rank fusion merges and deduplicates the results; up to five passages are sent with the original question to DeepSeek, which produces an answer with document/page sources.
+2. User uploads a PDF, TXT, DOCX, JPG, PNG, or HEIC file (10 MB per file by default; configurable with `MAX_UPLOAD_MB`). Multiple JPG/PNG photos can be combined into one PDF from the upload picker.
+3. The API stores the original in Cloudinary, creates a pending record, queues an indexing job in PostgreSQL, and returns HTTP 202.
+4. The Render Background Worker claims the job with `FOR UPDATE SKIP LOCKED`, extracts text, OCRs sparse PDF pages/photos using Tesseract (`eng+swa`), and reports progress stages.
+5. FastEmbed runs the MiniLM ONNX model to generate 384-dimensional embeddings; PostgreSQL pgvector stores them.
+6. A question is embedded and vector similarity plus PostgreSQL full-text keyword search find candidates within the selected document or folder. Reciprocal-rank fusion selects up to five passages for DeepSeek, which answers with document/page sources.
 
 ## Important limitations
 
 - Vercel deploys the frontend and FastAPI backend as services from the repository root.
-- PDF extraction handles text PDFs; scanned/image-only PDFs require OCR, which is not included.
-- On Vercel, uploads are indexed before the API request returns so serverless instance recycling cannot abandon work. Persistent hosts use a serialized in-process background task; use a durable queue and separate worker for restart-safe processing there.
+- The Render worker requires Tesseract with English and Swahili data, libheif, and the dependencies in `backend/requirements-worker.txt`. Configure it with the same `DATABASE_URL` and `MAX_UPLOAD_MB` as Vercel, then apply migration `0013`.
+- OCR can misread low-quality pages; the UI warns when OCR confidence is low. The worker records errors, retries with exponential backoff, and exposes terminal failures in the admin Jobs area.
 - Original files are stored in Cloudinary, while document metadata, extracted text, embeddings, accounts, and conversations are stored in Neon. Uploads fail if Cloudinary storage is not configured. Deleting a document or knowledge base also removes the associated Cloudinary originals.
 - In Vercel, set the project framework to **Services** and configure the backend variables listed in `backend/ENV_SETUP.md`. FastEmbed's ONNX runtime replaces PyTorch to keep the backend function bundle under the standard size limit.
-- The app enforces a 10 MB upload cap; the hosting platform may impose a lower request-body limit. Check the active Vercel plan/configuration when uploads near the app limit fail before reaching the backend. Larger-file support would require a direct-to-Cloudinary upload path or a supported host configuration. The frontend uses same-origin `/api/v1`; set `VITE_API_BASE_URL` only if the backend is deployed as a separate project.
+- The default file cap is 10 MB per file and is configurable up to the 50 MB service ceiling; the hosting platform may impose a lower request-body limit. The frontend uses same-origin `/api/v1`; set `VITE_API_BASE_URL` only if the backend is deployed as a separate project.
 - Review the schema and ownership/deletion behavior before migrating an existing database.

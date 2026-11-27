@@ -31,11 +31,17 @@ Add backend values in Vercel Project Settings → Environment Variables. Select 
 | `SUBSCRIPTIONS_ENFORCED` | Optional; defaults to `false`. Set `true` only after plans, live checkout, and callbacks are verified. |
 | `FRONTEND_ORIGIN` or `FRONTEND_URL` | Public frontend origin used by CORS and callback fallback, without a trailing slash. `FRONTEND_URL` is an accepted alias. |
 | `FRONTEND_ORIGINS` | Optional comma-separated additional frontend origins. |
-| `MAX_UPLOAD_MB` or `MAX_UPLOAD_SIZE_MB` | Accepted aliases, but the application currently enforces a fixed 10 MB per-file cap. |
+| `MAX_UPLOAD_MB` or `MAX_UPLOAD_SIZE_MB` | Per-file upload cap in MB; defaults to 10 and is clamped between 1 and 50 MB. Set the same value in Vercel and Render. The hosting request limit can be lower. |
+| `JOB_POLL_SECONDS` | Optional Render worker idle poll interval in seconds; defaults to 3. |
 | `MAX_EXTRACTED_CHARS` | Optional extracted-text limit; capped at 5,000,000 characters. |
 | `API_V1_PREFIX` | Optional API prefix; defaults to `/api/v1`. |
+| `SMTP_HOST` | SMTP host for email reminders; required to deliver the email channel. |
+| `SMTP_PORT` | SMTP port; defaults to `587`. |
+| `SMTP_USER` / `SMTP_PASSWORD` | Optional SMTP authentication credentials. |
+| `SMTP_FROM` | Optional sender address; defaults to `SMTP_USER`. |
+| `SMTP_STARTTLS` | Optional STARTTLS switch; defaults to `true`. |
 
-Never expose `DATABASE_URL`, `JWT_SECRET_KEY`, provider secrets, Daraja values, or `ADMIN_BOOTSTRAP_CODE` through `VITE_*` variables. The app currently does not need a Google client secret in the browser or backend for its ID-token verification flow.
+Never expose `DATABASE_URL`, `JWT_SECRET_KEY`, provider secrets, Daraja values, SMTP credentials, or `ADMIN_BOOTSTRAP_CODE` through `VITE_*` variables. The app currently does not need a Google client secret in the browser or backend for its ID-token verification flow.
 
 ### Google sign-in
 
@@ -51,17 +57,27 @@ Keep `SUBSCRIPTIONS_ENFORCED=false` while validating plans and sandbox flows. Th
 
 ### Local development
 
-Use Python 3.12 (`backend/.python-version`) and install `backend/requirements.txt`. The backend reads the repository `frontend/.env` and `backend/.env`; process environment variables take priority. Never put backend secrets in `VITE_*` values. Run FastAPI from the `backend` directory:
+Use Python 3.12 (`backend/.python-version`) and install `backend/requirements.txt` for the API. For a local indexing worker, install `backend/requirements-worker.txt` and system Tesseract with English and Swahili language data plus libheif. The backend reads the repository `frontend/.env` and `backend/.env`; process environment variables take priority. Never put backend secrets in `VITE_*` values. Run FastAPI from the `backend` directory:
 
 ```powershell
 python -m uvicorn app.main:app --reload
+```
+
+Run the worker in a separate long-lived process after applying the migrations:
+
+```powershell
+python worker.py
 ```
 
 Run the frontend from `frontend/` with `npm install` followed by `npm run dev`. Vite listens at `http://127.0.0.1:3000`. Set `VITE_DEV_API_PROXY_TARGET` to the local FastAPI origin, or set `VITE_API_BASE_URL` to a full local API prefix.
 
 ### Database migrations
 
-With backend dependencies installed and `DATABASE_URL` configured, run `npm run migrate` from the repository root before using a fresh or updated backend. This applies Alembic migrations without dropping existing data. The current latest migration is `0012_document_chunk_fts_index.py`; it creates the PostgreSQL full-text index used by hybrid document retrieval.
+With backend dependencies installed and `DATABASE_URL` configured, run `npm run migrate` from the repository root before using a fresh or updated backend. This applies Alembic migrations without dropping existing data. Migration `0013_durable_jobs_and_ocr.py` creates the PostgreSQL job queue and OCR/progress columns; migration `0014_document_events_and_reminders.py` creates important-date extraction and reminders. The API and Render worker must point to the same migrated database.
+
+### Render worker deployment
+
+The root `render.yaml` describes a separate Render **Background Worker**. Create it from the repository Blueprint and configure `DATABASE_URL` to the same Neon/PostgreSQL URL as the Vercel backend, plus the same `MAX_UPLOAD_MB`. Configure `JWT_SECRET_KEY` because shared backend settings require it. The build command installs Tesseract, `eng` and `swa` trained data, libheif, and Python OCR/image dependencies, then preloads the embedding model. Set a restart policy so an exited worker is restarted. Vercel continues to host the UI/API; it only stores originals and enqueues work. Do not run the worker as a serverless function.
 
 ### First administrator
 

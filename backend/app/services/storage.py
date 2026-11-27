@@ -3,6 +3,8 @@
 import cloudinary
 import cloudinary.uploader
 from io import BytesIO
+from urllib.parse import urlparse
+import httpx
 from app.core.config import get_settings
 
 def store_file(filename: str, data: bytes):
@@ -33,3 +35,22 @@ def delete_file(public_id: str, resource_type: str = 'raw'):
     result = cloudinary.uploader.destroy(public_id, resource_type=resource_type, invalidate=True, timeout=30)
     if result.get('result') not in {'ok', 'not found'}:
         raise RuntimeError('Cloudinary could not delete the stored document')
+
+def download_file(url: str, max_bytes: int) -> bytes:
+    """Fetch a previously stored Cloudinary original with strict host/size limits."""
+    parsed = urlparse(url)
+    if parsed.scheme != 'https' or not (parsed.hostname == 'res.cloudinary.com' or (parsed.hostname or '').endswith('.res.cloudinary.com')):
+        raise RuntimeError('The stored original file could not be retrieved. Please upload the file again.')
+    parts = []
+    total = 0
+    try:
+        with httpx.stream('GET', url, timeout=httpx.Timeout(30, connect=10), follow_redirects=False) as response:
+            response.raise_for_status()
+            for part in response.iter_bytes():
+                total += len(part)
+                if total > max_bytes:
+                    raise RuntimeError('The stored original file is larger than the configured upload limit.')
+                parts.append(part)
+    except httpx.HTTPError as exc:
+        raise RuntimeError('The stored original file could not be retrieved. Please try uploading it again.') from exc
+    return b''.join(parts)
