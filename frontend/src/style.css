@@ -838,3 +838,74 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
   .billing-current p { margin-bottom: 0; }
   .admin-form-pair { grid-template-columns: 1fr; }
 }
+
+/* Updated visual theme: soft sage surfaces, restrained green accents, and
+   clearer type hierarchy without the bright blue workspace or stark white cards. */
+:root {
+  --app-background: #dce2d8;
+  --app-surface: #f0efe6;
+  --app-surface-raised: #e7e9df;
+  --app-accent: #607764;
+  --app-accent-hover: #4f6854;
+  color: #26372f;
+  background: var(--app-background);
+}
+html, body, #root, .shell, main { background: var(--app-background); }
+body { color: #26372f; }
+.shell { background: var(--app-background); }
+.shell > main { background: var(--app-background); }
+.auth-wrap { background: radial-gradient(circle at 20% 20%, #cfd9cc, transparent 36%), var(--app-background); }
+.app-loading { background: var(--app-background); color: #304737; }
+aside, .shell > aside { background: #e4e7dd; border-color: #cbd3c8; }
+.mobile-topbar { background: #737f70; border-bottom-color: #687565; }
+.mobile-topbar .brand, .mobile-topbar .brand span { color: #f3f1e8; }
+.workspace-resizer:hover::after, .workspace-resizer:focus-visible::after { background: var(--app-accent); }
+nav button { color: #526257; }
+nav button:hover { background: #d9dfd4; }
+nav button.selected, .folder-tree .folder-file-row:hover:not(:disabled), .folder-tree .folder-file-row.selected { background: #d2ddcf; color: #2e5138; }
+.sidebottom button { background: #d9dfd4; color: #405645; }
+.folder-file-row { color: #405648; font-size: 14px; font-weight: 700; }
+.folder-tree .folder-file-row { min-height: 40px; }
+.folder-file-row svg { color: #607a65; }
+.history-open { color: #5b6b60; font-size: 12px; }
+.document-chat-list .history-open { font-size: 11px; }
+.history-open:hover, .history-row.selected .history-open { background: #dfe4d9; color: #395b42; }
+.auth-card, .legal-card, .settings-card, .chat, .chat > .composer, .upload-panel { background: var(--app-surface); }
+.shell > main > .chat { background: var(--app-surface); border-color: #cbd3c8; }
+.chat > .composer { background: var(--app-surface); border-top-color: #d3d7cb; }
+.composer input, .auth-card input, .newkb input { background: #e9e8de; border-color: #c5cdc0; color: #26372f; }
+.auth-card button, .newkb button, .composer button, .upload-trigger, .settings-signout {
+  background: var(--app-accent);
+  border-color: var(--app-accent);
+}
+.auth-card button:hover, .newkb button:hover, .composer button:hover, .upload-trigger:hover, .settings-signout:hover { background: var(--app-accent-hover); }
+.auth-card .auth-toggle, .auth-terms button, .auth-legal-nav button, .sidebar-legal-links button,
+.legal-footer > button:first-child, .settings-links button { color: #48664e; }
+.mobile-open-files { background: #dfe5d9; border-color: #bcc8b9; color: #405c46; }
+.mobile-open-files:hover { background: #d4ddcf; }
+.chat-heading h2, .admin-header h1, .billing-current h2 { color: #304c37; }
+.billing-shell > main.admin-content { background: #e6e8df; border-color: #c8d0c5; }
+.billing-shell .billing-current, .billing-shell .admin-plan-card, .billing-shell .admin-row { background: #f0efe6; border-color: #d0d5ca; }
+.billing-shell .billing-current h2 { color: #395a40; font-size: 22px; }
+.billing-shell .billing-current p, .billing-shell .admin-section-heading p { color: #4f6253; font-size: 14px; }
+.billing-shell .admin-section-heading h2 { color: #38553e; font-size: 22px; }
+.billing-shell .billing-phone { color: #405b46; font-size: 14px; }
+.billing-shell .billing-phone input { background: #f0efe6; border-color: #c5cdc0; color: #26372f; font-size: 15px; }
+.billing-shell .admin-note { background: #dfe5d9; border-color: #c7d1c3; color: #405847; font-size: 14px; }
+.billing-shell .admin-plan-card strong, .billing-shell .admin-row-main strong { color: #344e39; font-size: 15px; }
+.billing-shell .admin-plan-card p, .billing-shell .admin-row-main small, .billing-shell .admin-row time { color: #58695b; font-size: 13px; }
+.billing-shell .admin-plan-card b { color: #3f6046; font-size: 18px; }
+.billing-shell .billing-message { background: #dfe9dc; border-color: #c4d2be; color: #35543b; }
+.billing-shell .admin-primary { background: var(--app-accent); border-color: var(--app-accent); }
+.billing-shell .admin-primary:hover { background: var(--app-accent-hover); }
+
+@media (max-width: 700px) {
+  :root, html, body, #root, .shell, main { background: var(--app-background); }
+  .mobile-topbar { background: #737f70; border-bottom-color: #687565; }
+  .shell > aside { background: #e4e7dd; }
+  .shell > main > .chat { background: var(--app-surface); }
+  .folder-file-row { font-size: 14px; }
+  .history-open { font-size: 12px; }
+  .billing-shell .admin-header h1 { font-size: 22px; }
+  .billing-shell > main.admin-content { padding: 15px; background: #e6e8df; }
+}
