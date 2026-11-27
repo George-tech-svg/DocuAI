@@ -90,7 +90,7 @@ export async function request<T>(
         // Keep the HTTP status message if the server did not return JSON.
       }
 
-      if (response.status >= 500) {
+      if (response.status >= 500 && (message.startsWith("Request failed") || message === "Internal Server Error")) {
         message = "Something went wrong on our end. Please try again later.";
       }
 
