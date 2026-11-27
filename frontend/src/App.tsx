@@ -771,6 +771,7 @@ export default function App() {
           <button type="button" onClick={() => { setIsRegistering(false); setShowAdminBootstrap(false); setHasAcceptedTerms(false); setErrorMessage(""); setSuccessMessage(""); }}>Admin sign in</button>
           {adminBootstrapAvailable && <button type="button" onClick={() => { setShowAdminBootstrap(true); setErrorMessage(""); }}>First-time setup</button>}
         </div>
+        <div className="auth-content">
         {showAdminBootstrap && adminBootstrapAvailable ? (
         <form className="auth-card" onSubmit={handleAdminBootstrap}>
           <div className="brand"><BookOpen /> DocuMind <span>AI</span></div>
@@ -789,7 +790,7 @@ export default function App() {
           <button disabled={isBusy}>{isBusy ? "Please wait..." : "Register first administrator"}</button>
           <p><button type="button" className="auth-toggle" onClick={() => { setShowAdminBootstrap(false); setErrorMessage(""); }}>Back to sign in</button></p>
         </form>
-        ) : <form className="auth-card" noValidate onSubmit={handleAuthentication}>
+        ) : <form className={`auth-card ${isRegistering ? "auth-card-register" : ""}`} noValidate onSubmit={handleAuthentication}>
           <div className="brand">
             <BookOpen /> DocuMind <span>AI</span>
           </div>
@@ -816,56 +817,20 @@ export default function App() {
             onCredential={(credential, mode, accepted) => void handleGoogleSignIn(credential, mode, accepted)}
           />
 
-          {isRegistering && (
-            <input
-              required
-              minLength={2}
-              maxLength={150}
-              placeholder="Full name"
-              value={fullName}
-              onChange={(event) => setFullName(event.target.value)}
-            />
-          )}
-
-          <input
-            type="email"
-            required
-            placeholder="Email address"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-          />
-
-          <input
-            type="password"
-            required
-            minLength={isRegistering ? 8 : undefined}
-            maxLength={isRegistering ? 128 : undefined}
-            autoComplete={isRegistering ? "new-password" : "current-password"}
-            title={
-              isRegistering
-                ? "Use at least 8 characters."
-                : undefined
-            }
-            placeholder="Password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-
-          {isRegistering && (
-            <>
-              <input
-                type="password"
-                required
-                minLength={8}
-                maxLength={128}
-                autoComplete="new-password"
-                placeholder="Confirm password"
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-              />
+          {isRegistering ? (
+            <div className="auth-register-fields">
+              <label>Full name<input required minLength={2} maxLength={150} autoComplete="name" placeholder="Your full name" value={fullName} onChange={(event) => setFullName(event.target.value)} /></label>
+              <label>Email address<input type="email" required autoComplete="email" placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+              <label>Password<input type="password" required minLength={8} maxLength={128} autoComplete="new-password" placeholder="At least 8 characters" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+              <label>Confirm password<input type="password" required minLength={8} maxLength={128} autoComplete="new-password" placeholder="Enter your password again" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label>
               {confirmPassword && password !== confirmPassword && (
                 <p className="error password-mismatch" role="status">Passwords do not match. Please check and try again.</p>
               )}
+            </div>
+          ) : (
+            <>
+              <input type="email" required autoComplete="email" placeholder="Email address" value={email} onChange={(event) => setEmail(event.target.value)} />
+              <input type="password" required autoComplete="current-password" placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} />
             </>
           )}
 
@@ -909,6 +874,7 @@ export default function App() {
           <span aria-hidden="true">·</span>
           <button type="button" onClick={() => openLegalPage("privacy")}>Privacy notice</button>
         </nav>
+        </div>
       </div>
     );
   }

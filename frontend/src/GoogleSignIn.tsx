@@ -27,7 +27,6 @@ export default function GoogleSignIn({ mode, acceptedTerms, onCredential }: {
   const optionsRef = useRef({ mode, acceptedTerms, onCredential });
   const [loadError, setLoadError] = useState("");
   const [clientId, setClientId] = useState(GOOGLE_CLIENT_ID);
-  const canUseGoogle = mode === "login" || acceptedTerms;
   optionsRef.current = { mode, acceptedTerms, onCredential };
 
   useEffect(() => {
@@ -44,7 +43,7 @@ export default function GoogleSignIn({ mode, acceptedTerms, onCredential }: {
   }, [clientId]);
 
   useEffect(() => {
-    if (!clientId || !canUseGoogle || !buttonRef.current) return;
+    if (!clientId || !buttonRef.current) return;
     let cancelled = false;
     let buttonCheckTimer: number | undefined;
     const callback = (response: GoogleCredential) => {
@@ -94,7 +93,7 @@ export default function GoogleSignIn({ mode, acceptedTerms, onCredential }: {
       cancelled = true;
       if (buttonCheckTimer) window.clearTimeout(buttonCheckTimer);
     };
-  }, [clientId, canUseGoogle, mode]);
+  }, [clientId, mode]);
 
   if (!clientId) return (
     <div className="google-signin-wrap">
@@ -108,7 +107,7 @@ export default function GoogleSignIn({ mode, acceptedTerms, onCredential }: {
     <div className="google-signin-wrap">
       <div className="auth-divider"><span>or</span></div>
       <div className="google-signin-frame">
-        {canUseGoogle && !loadError
+        {!loadError
           ? <div className="google-signin-button" ref={buttonRef} />
           : <button className="google-signin-disabled" type="button" disabled>{loadError || "Accept Terms and Privacy to continue with Google"}</button>}
       </div>
