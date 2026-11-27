@@ -62,7 +62,7 @@ async def upload(kb_id: UUID, background_tasks: BackgroundTasks, file: UploadFil
     max_bytes = max_upload_mb() * 1_000_000
     data = await file.read(max_bytes + 1)
     if len(data) > max_bytes:
-        raise HTTPException(413, 'File too large')
+        raise HTTPException(413, 'File is too large. Maximum size is 10MB.')
     owned_kb(db, user.id, kb_id)
     name, mime = validate_upload(file.filename or '', data, max_upload_mb())
     doc = Document(

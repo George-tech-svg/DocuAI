@@ -18,19 +18,17 @@ declare global {
 
 const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "").trim();
 
-export default function GoogleSignIn({ mode, acceptedTerms, password, passwordsMatch, onCredential }: {
+export default function GoogleSignIn({ mode, acceptedTerms, onCredential }: {
   mode: GoogleMode;
   acceptedTerms: boolean;
-  password: string;
-  passwordsMatch: boolean;
-  onCredential: (credential: string, mode: GoogleMode, acceptedTerms: boolean, password: string) => void;
+  onCredential: (credential: string, mode: GoogleMode, acceptedTerms: boolean) => void;
 }) {
   const buttonRef = useRef<HTMLDivElement>(null);
-  const optionsRef = useRef({ mode, acceptedTerms, password, onCredential });
+  const optionsRef = useRef({ mode, acceptedTerms, onCredential });
   const [loadError, setLoadError] = useState("");
   const [clientId, setClientId] = useState(GOOGLE_CLIENT_ID);
-  const canUseGoogle = mode === "login" || (acceptedTerms && passwordsMatch);
-  optionsRef.current = { mode, acceptedTerms, password, onCredential };
+  const canUseGoogle = mode === "login" || acceptedTerms;
+  optionsRef.current = { mode, acceptedTerms, onCredential };
 
   useEffect(() => {
     if (clientId) return;
@@ -48,7 +46,7 @@ export default function GoogleSignIn({ mode, acceptedTerms, password, passwordsM
     const callback = (response: GoogleCredential) => {
       if (response.credential) {
         const options = optionsRef.current;
-        options.onCredential(response.credential, options.mode, options.acceptedTerms, options.password);
+        options.onCredential(response.credential, options.mode, options.acceptedTerms);
       } else setLoadError("Google did not return a sign-in credential. Please try again.");
     };
     const renderButton = () => {
@@ -108,9 +106,7 @@ export default function GoogleSignIn({ mode, acceptedTerms, password, passwordsM
       <div className="google-signin-frame">
         {canUseGoogle && !loadError
           ? <div className="google-signin-button" ref={buttonRef} />
-          : <button className="google-signin-disabled" type="button" disabled>{loadError || (password && acceptedTerms
-            ? "Passwords must match to continue with Google"
-            : "Set and confirm a password, then accept Terms and Privacy to continue with Google")}</button>}
+          : <button className="google-signin-disabled" type="button" disabled>{loadError || "Accept Terms and Privacy to continue with Google"}</button>}
       </div>
       {loadError && <p className="error google-signin-error" role="alert">{loadError}</p>}
     </div>

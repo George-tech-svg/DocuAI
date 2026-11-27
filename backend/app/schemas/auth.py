@@ -9,7 +9,7 @@ class UserRegister(BaseModel):
     full_name: str = Field(min_length=2, max_length=150)
     email: EmailStr
     # Numeric-only passwords are valid; enforce only the advertised minimum.
-    password: str = Field(min_length=4, max_length=128)
+    password: str = Field(min_length=8, max_length=128)
 
 class UserRegistrationRequest(UserRegister):
     accept_terms: bool
@@ -29,7 +29,6 @@ class GoogleLoginRequest(BaseModel):
     credential: str = Field(min_length=20, max_length=8192)
     mode: Literal["login", "register"]
     accept_terms: bool = False
-    password: str | None = Field(default=None, min_length=4, max_length=128)
 
 class AdminBootstrapRequest(BaseModel):
     full_name: str = Field(min_length=2, max_length=150)

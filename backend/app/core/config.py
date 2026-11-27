@@ -58,7 +58,7 @@ def get_settings():
 
 def max_upload_mb() -> int:
     """Apply a conservative per-file cap even if hosting env is oversized."""
-    return min(get_settings().MAX_UPLOAD_MB, MAX_SAFE_UPLOAD_MB)
+    return 10
 
 
 def max_extracted_chars() -> int:

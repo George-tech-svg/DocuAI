@@ -90,6 +90,10 @@ export async function request<T>(
         // Keep the HTTP status message if the server did not return JSON.
       }
 
+      if (response.status >= 500) {
+        message = "Something went wrong on our end. Please try again later.";
+      }
+
       throw new Error(message);
     }
 
@@ -111,7 +115,7 @@ export async function request<T>(
       throw new Error("Request was cancelled.");
     }
     if (error instanceof TypeError) {
-      throw new Error("Cannot reach the DocuMind API. The backend may be starting, restarting, or returning a gateway error. Check the backend logs for details.");
+      throw new Error("Network error. Please check your connection and try again.");
     }
     throw error;
   } finally {

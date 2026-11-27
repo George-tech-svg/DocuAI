@@ -216,6 +216,7 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
 .composer input { flex: 1; min-width: 0; padding: 14px; border: 1px solid #cbd9ce; border-radius: 10px; background: #f7f8f2; color: #20382e; }
 .composer input::placeholder, .newkb input::placeholder, .auth-card input::placeholder { color: #829185; }
 .error { color: #a8333b !important; }
+.success { color: #16734f !important; }
 .banner { background: #f3e5e2; border: 1px solid #e8d2cd; padding: 12px 18px; border-radius: 10px; }
 .banner button { float: right; border: 0; background: none; color: #a8333b; }
 .document-error { margin-top: 4px; white-space: normal; }

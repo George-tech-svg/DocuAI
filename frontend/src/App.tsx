@@ -172,6 +172,7 @@ export default function App() {
   const [isBusy, setIsBusy] = useState(false);
   const [busyMessage, setBusyMessage] = useState("Processing...");
   const [errorMessage, setErrorMessage] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
   useEffect(() => { localStorage.setItem("documind_sidebar_width", String(sidebarWidth)); }, [sidebarWidth]);
 
@@ -338,8 +339,22 @@ export default function App() {
   /** Register a new user or sign in an existing user. */
   async function handleAuthentication(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setErrorMessage("");
+    setSuccessMessage("");
+    if ((isRegistering && !fullName.trim()) || !email.trim() || !password || (isRegistering && !confirmPassword)) {
+      setErrorMessage(isRegistering ? "Please fill in all fields." : "Please enter both email and password.");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setErrorMessage("Please enter a valid email address.");
+      return;
+    }
     if (isRegistering && password !== confirmPassword) {
-      setErrorMessage("Your passwords do not match.");
+      setErrorMessage("Passwords do not match. Please check and try again.");
+      return;
+    }
+    if (isRegistering && password.length < 8) {
+      setErrorMessage("Password must be at least 8 characters long.");
       return;
     }
     if (isRegistering && !hasAcceptedTerms) {
@@ -353,14 +368,22 @@ export default function App() {
     try {
       const endpoint = isRegistering ? "/auth/register" : "/auth/login";
       const credentials = isRegistering
-        ? { full_name: fullName, email, password, accept_terms: hasAcceptedTerms }
-        : { email, password };
+        ? { full_name: fullName.trim(), email: email.trim(), password, accept_terms: hasAcceptedTerms }
+        : { email: email.trim(), password };
 
       const response = await request<AuthenticationResponse>(endpoint, "", {
         method: "POST",
         body: JSON.stringify(credentials),
       });
 
+      if (isRegistering) {
+        setIsRegistering(false);
+        setPassword("");
+        setConfirmPassword("");
+        setHasAcceptedTerms(false);
+        setSuccessMessage("Account created successfully!");
+        return;
+      }
       localStorage.setItem("documind_token", response.access_token);
       setToken(response.access_token);
       setPassword("");
@@ -397,7 +420,7 @@ export default function App() {
     }
   }
 
-  async function handleGoogleSignIn(credential: string, mode: "login" | "register", acceptedTerms: boolean, googlePassword: string) {
+  async function handleGoogleSignIn(credential: string, mode: "login" | "register", acceptedTerms: boolean) {
     if (mode === "register" && !acceptedTerms) {
       setErrorMessage("Accept the Terms of Service and Privacy Notice before creating your account.");
       return;
@@ -408,7 +431,7 @@ export default function App() {
     try {
       const response = await request<AuthenticationResponse>("/auth/google", "", {
         method: "POST",
-        body: JSON.stringify({ credential, mode, accept_terms: acceptedTerms, password: mode === "register" ? googlePassword : undefined }),
+        body: JSON.stringify({ credential, mode, accept_terms: acceptedTerms }),
       });
       localStorage.setItem("documind_token", response.access_token);
       setToken(response.access_token);
@@ -653,8 +676,12 @@ export default function App() {
     try {
       for (const [index, file] of files.entries()) {
         setBusyMessage(`Uploading file ${index + 1} of ${files.length}: ${file.name}`);
-        if (file.size > 20_000_000) {
-          failures.push(`${file.name}: File exceeds the 20 MB limit.`);
+        if (!/\.(pdf|txt)$/i.test(file.name)) {
+          failures.push("Invalid file type. Please upload a PDF or TXT file.");
+          continue;
+        }
+        if (file.size > 10_000_000) {
+          failures.push("File is too large. Maximum size is 10MB.");
           continue;
         }
         const formData = new FormData();
@@ -669,17 +696,17 @@ export default function App() {
           if (response.document.status === "ready" || response.document.status === "pending" || response.document.status === "processing") {
             uploaded += 1;
           } else {
-            failures.push(`${file.name}: ${response.document.processing_error ?? "Processing failed."}`);
+            failures.push("Failed to process the file. Please try again.");
           }
         } catch (error) {
-          failures.push(`${file.name}: ${getErrorMessage(error)}`);
+          failures.push(getErrorMessage(error));
         }
       }
       await refreshDocuments();
       if (failures.length) {
         const shownFailures = failures.slice(0, 3).join("; ");
         const remaining = failures.length > 3 ? `; and ${failures.length - 3} more` : "";
-        setErrorMessage(`${uploaded} of ${files.length} files uploaded. ${shownFailures}${remaining}`);
+        setErrorMessage(uploaded ? `${uploaded} of ${files.length} files uploaded. ${shownFailures}${remaining}` : shownFailures);
       }
     } finally {
       setIsBusy(false);
@@ -748,7 +775,11 @@ export default function App() {
   /** Send a question and display the AI answer with its document sources. */
   async function handleSendQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!question.trim() || !selectedKnowledgeBaseId || !selectedDocumentId || isBusy) return;
+    if (!selectedDocumentId) {
+      setErrorMessage("Please select a file to use the chatbot.");
+      return;
+    }
+    if (!question.trim() || !selectedKnowledgeBaseId || isBusy) return;
 
     const submittedQuestion = question.trim();
     setQuestion("");
@@ -815,7 +846,7 @@ export default function App() {
           <button disabled={isBusy}>{isBusy ? "Please wait..." : "Register first administrator"}</button>
           <p><button type="button" className="auth-toggle" onClick={() => { setShowAdminBootstrap(false); setErrorMessage(""); }}>Back to sign in</button></p>
         </form>
-        ) : <form className="auth-card" onSubmit={handleAuthentication}>
+        ) : <form className="auth-card" noValidate onSubmit={handleAuthentication}>
           <div className="brand">
             <BookOpen /> DocuMind <span>AI</span>
           </div>
@@ -845,12 +876,12 @@ export default function App() {
           <input
             type="password"
             required
-            minLength={isRegistering ? 4 : undefined}
+            minLength={isRegistering ? 8 : undefined}
             maxLength={isRegistering ? 128 : undefined}
             autoComplete={isRegistering ? "new-password" : "current-password"}
             title={
               isRegistering
-                ? "Use at least 4 characters. Numbers are allowed."
+                ? "Use at least 8 characters."
                 : undefined
             }
             placeholder="Password"
@@ -863,7 +894,7 @@ export default function App() {
               <input
                 type="password"
                 required
-                minLength={4}
+                minLength={8}
                 maxLength={128}
                 autoComplete="new-password"
                 placeholder="Confirm password"
@@ -871,7 +902,7 @@ export default function App() {
                 onChange={(event) => setConfirmPassword(event.target.value)}
               />
               {confirmPassword && password !== confirmPassword && (
-                <p className="error password-mismatch" role="status">Passwords do not match.</p>
+                <p className="error password-mismatch" role="status">Passwords do not match. Please check and try again.</p>
               )}
               <div className="auth-terms">
                 <label>
@@ -888,15 +919,16 @@ export default function App() {
 
           {isRegistering && (
             <p className="muted">
-              Use at least 4 characters. Numbers are allowed.
+              Use at least 8 characters.
             </p>
           )}
 
           {errorMessage && <p className="error">{errorMessage}</p>}
+          {successMessage && <p className="success" role="status">{successMessage}</p>}
 
           <button disabled={isBusy}>
             {isBusy
-              ? "Please wait..."
+              ? isRegistering ? "Creating account..." : "Signing in..."
               : isRegistering
                 ? "Create account"
                 : "Sign in"}
@@ -911,6 +943,7 @@ export default function App() {
                 setConfirmPassword("");
                 setHasAcceptedTerms(false);
                 setErrorMessage("");
+                setSuccessMessage("");
               }}
             >
               {isRegistering
@@ -923,9 +956,7 @@ export default function App() {
           <GoogleSignIn
             mode={isRegistering ? "register" : "login"}
             acceptedTerms={hasAcceptedTerms}
-            password={password}
-            passwordsMatch={password.length >= 4 && password === confirmPassword}
-            onCredential={(credential, mode, accepted, googlePassword) => void handleGoogleSignIn(credential, mode, accepted, googlePassword)}
+            onCredential={(credential, mode, accepted) => void handleGoogleSignIn(credential, mode, accepted)}
           />
         )}
         <nav className="auth-legal-nav" aria-label="Legal information">
@@ -1207,7 +1238,7 @@ export default function App() {
               <h2>{selectedDocument?.original_filename ?? selectedKnowledgeBase?.name ?? "Your workspace"}</h2>
               <p>{selectedDocumentId
                 ? "Questions and saved chats are tied to this file. Expand it in the sidebar to reopen a chat."
-                : "Choose a ready file from the sidebar to start asking questions."}</p>
+              : "Please select a file to use the chatbot."}</p>
             </div>
             <div className="chat-actions">
               <span className="pill">{documents.length} file{documents.length === 1 ? "" : "s"}</span>
@@ -1347,7 +1378,7 @@ export default function App() {
             <div className="upload-panel-heading">
               <div>
                 <h2 id="upload-title">Files in {selectedKnowledgeBase?.name ?? "this folder"}</h2>
-                <p>PDF, DOCX, or TXT · up to 20 MB per file</p>
+                <p>PDF or TXT · up to 10 MB per file</p>
               </div>
               <button className="icon-button" aria-label="Close uploads" onClick={() => setIsUploadPanelOpen(false)} disabled={isBusy}><X /></button>
             </div>
@@ -1355,7 +1386,7 @@ export default function App() {
               <Upload size={21} />
               <strong>{isBusy ? busyMessage : "Choose files to upload"}</strong>
               <small>Files are added to the selected folder.</small>
-              <input type="file" accept=".pdf,.docx,.txt" multiple onChange={handleUpload} disabled={isBusy} />
+              <input type="file" accept=".pdf,.txt" multiple onChange={handleUpload} disabled={isBusy} />
             </label>
             {errorMessage && <div className="error banner upload-error" role="alert">{errorMessage}</div>}
             <div className="filelist upload-filelist">

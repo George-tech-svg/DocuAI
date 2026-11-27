@@ -2,20 +2,18 @@
 
 from pathlib import Path
 from fastapi import HTTPException
-ALLOWED = {'.pdf': 'application/pdf', '.txt': 'text/plain', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'}
+ALLOWED = {'.pdf': 'application/pdf', '.txt': 'text/plain'}
 
 def validate_upload(filename: str, content: bytes, max_mb: int):
     """Check filename, extension, file size, and basic file signatures."""
     name = Path((filename or '').replace(chr(92), '/')).name
     suffix = Path(name).suffix.lower()
     if not name or len(name) > 255 or suffix not in ALLOWED:
-        raise HTTPException(400, 'Supported files: PDF, TXT, DOCX')
+        raise HTTPException(400, 'Invalid file type. Please upload a PDF or TXT file.')
     if not content:
         raise HTTPException(400, 'File is empty')
     if len(content) > max_mb * 1_000_000:
-        raise HTTPException(413, 'File too large')
+        raise HTTPException(413, 'File is too large. Maximum size is 10MB.')
     if suffix == '.pdf' and (not content.startswith(b'%PDF-')):
-        raise HTTPException(400, 'Invalid PDF signature')
-    if suffix == '.docx' and (not content.startswith(b'PK')):
-        raise HTTPException(400, 'Invalid DOCX signature')
+        raise HTTPException(400, 'Invalid file type. Please upload a PDF or TXT file.')
     return (name, ALLOWED[suffix])

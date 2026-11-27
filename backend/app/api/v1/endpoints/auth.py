@@ -9,7 +9,7 @@ from app.db.session import get_db
 from app.api.dependencies import current_user
 from app.models.user import User
 from app.schemas.auth import UserRegistrationRequest, UserLogin, GoogleLoginRequest, AdminBootstrapRequest, UserResponse, AuthResponse
-from app.services.auth_service import register_user, authenticate_user, EmailAlreadyRegisteredError, AuthenticationError
+from app.services.auth_service import register_user, authenticate_user, EmailAlreadyRegisteredError, AuthenticationError, GoogleOnlyAccountError, WrongPasswordError
 from app.core.security import create_access_token
 from app.core.config import get_settings
 from app.core.security import hash_password, verify_password
@@ -45,7 +45,7 @@ def bootstrap_admin(data: AdminBootstrapRequest, db: Session=Depends(get_db)):
     email = str(data.email).lower()
     user = db.scalar(select(User).where(User.email == email).with_for_update())
     if user:
-        if not verify_password(data.password, user.password_hash):
+        if user.password_hash is None or not verify_password(data.password, user.password_hash):
             db.rollback()
             raise HTTPException(401, 'The password does not match this existing account.')
         if not user.is_active:
@@ -64,16 +64,22 @@ def bootstrap_admin(data: AdminBootstrapRequest, db: Session=Depends(get_db)):
 def register(data: UserRegistrationRequest, db: Session=Depends(get_db)):
     try:
         user = register_user(db, data)
-    except EmailAlreadyRegisteredError:
-        raise HTTPException(409, 'Email already registered')
+    except EmailAlreadyRegisteredError as exc:
+        if str(exc) == 'google':
+            raise HTTPException(409, 'This email is already registered with Google. Please sign in with Google.')
+        raise HTTPException(409, 'An account with this email already exists. Please log in.')
     return AuthResponse(user=UserResponse.model_validate(user), access_token=create_access_token(str(user.id)))
 
 @router.post('/login', response_model=AuthResponse)
 def login(data: UserLogin, db: Session=Depends(get_db)):
     try:
         user = authenticate_user(db, data.email, data.password)
+    except GoogleOnlyAccountError:
+        raise HTTPException(401, 'This account was created with Google. Please sign in with Google.')
+    except WrongPasswordError:
+        raise HTTPException(401, 'Wrong password. Please try again.')
     except AuthenticationError:
-        raise HTTPException(401, 'Invalid credentials')
+        raise HTTPException(404, 'No account found with this email. Please register first.')
     return AuthResponse(user=UserResponse.model_validate(user), access_token=create_access_token(str(user.id)))
 
 @router.post('/google', response_model=AuthResponse)
@@ -104,22 +110,15 @@ def google_login(data: GoogleLoginRequest, db: Session=Depends(get_db)):
     if user is not None:
         if not user.is_active:
             raise HTTPException(403, 'This account is disabled. Contact support for help.')
-        if data.mode == 'register':
-            raise HTTPException(409, 'An account with this Google email already exists. Choose Sign in instead.')
+        # Verified matching email links Google to an existing password account.
         user.is_verified = True
         db.commit()
         db.refresh(user)
     else:
-        if data.mode == 'login':
-            raise HTTPException(404, 'No account was found for this Google email. Choose Create account to register.')
-        if not data.accept_terms:
-            raise HTTPException(400, 'Accept the Terms of Service and Privacy Notice before creating your account.')
-        if not data.password:
-            raise HTTPException(400, 'Set and confirm a password before creating your Google account.')
         user = User(
             full_name=full_name,
             email=email,
-            password_hash=hash_password(data.password),
+            password_hash=None,
             is_verified=True,
         )
         db.add(user)
