@@ -1,18 +1,20 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { ArrowLeft, BadgeCheck, CreditCard, LayoutDashboard, Package, Plus, Users } from "lucide-react";
+import { Activity, ArrowLeft, BadgeCheck, CreditCard, FileText, LayoutDashboard, MessageCircle, Package, Plus, Users } from "lucide-react";
 import { getErrorMessage, request } from "./api";
 
-type Tab = "overview" | "members" | "plans" | "subscriptions" | "payments";
-type Overview = { members_total: number; members_active: number; subscriptions_active: number; subscriptions_expiring: number; payments_total: number; payments_pending: number; revenue_kes: number; mpesa_ready: boolean };
+type Tab = "overview" | "members" | "activity" | "plans" | "subscriptions" | "payments";
+type Overview = { members_total: number; members_active: number; documents_total: number; documents_ready: number; documents_failed: number; conversations_total: number; questions_total: number; questions_last_7_days: number; subscriptions_active: number; subscriptions_expiring: number; payments_total: number; payments_pending: number; revenue_kes: number; mpesa_ready: boolean; google_ready: boolean; ai_ready: boolean; storage_ready: boolean };
 type Plan = { id: string; name: string; description: string; price_kes: number; duration_days: number; is_active: boolean };
 type Member = { id: string; full_name: string; email: string; is_active: boolean; is_superuser: boolean; current_plan: string | null; subscription_status: string | null; expires_at: string | null; created_at: string };
 type Subscription = { id: string; full_name: string; email: string; plan_name: string; price_kes: number; status: string; expires_at: string | null; created_at: string };
 type Payment = { id: string; full_name: string; email: string; amount_kes: number; phone_number: string; status: string; mpesa_receipt: string | null; result_description: string | null; created_at: string };
+type ActivityEvent = { id: string; kind: string; member_name: string; member_email: string; summary: string; created_at: string };
 
 const tabs: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "members", label: "Members", icon: Users },
+  { id: "activity", label: "Activity", icon: Activity },
   { id: "plans", label: "Plans", icon: Package },
   { id: "subscriptions", label: "Subscriptions", icon: BadgeCheck },
   { id: "payments", label: "Payments", icon: CreditCard },
@@ -25,6 +27,7 @@ export default function AdminDashboard({ token, onBack }: { token: string; onBac
   const [tab, setTab] = useState<Tab>("overview");
   const [overview, setOverview] = useState<Overview | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
+  const [activities, setActivities] = useState<ActivityEvent[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -42,6 +45,7 @@ export default function AdminDashboard({ token, onBack }: { token: string; onBac
     try {
       if (nextTab === "overview") setOverview(await request<Overview>("/admin/overview", token));
       if (nextTab === "members") setMembers(await request<Member[]>("/admin/members", token));
+      if (nextTab === "activity") setActivities(await request<ActivityEvent[]>("/admin/activity", token));
       if (nextTab === "plans") setPlans(await request<Plan[]>("/admin/plans", token));
       if (nextTab === "subscriptions") setSubscriptions(await request<Subscription[]>("/admin/subscriptions", token));
       if (nextTab === "payments") setPayments(await request<Payment[]>("/admin/payments", token));
@@ -85,12 +89,26 @@ export default function AdminDashboard({ token, onBack }: { token: string; onBac
             <div className="admin-stats">
               {[["Members", overview?.members_total], ["Active members", overview?.members_active], ["Active subscriptions", overview?.subscriptions_active], ["Expiring this week", overview?.subscriptions_expiring], ["Payments awaiting review", overview?.payments_pending], ["Confirmed revenue", overview ? money(overview.revenue_kes) : undefined], ["M-Pesa setup", overview ? (overview.mpesa_ready ? "Ready" : "Needs setup") : undefined]].map(([label, value]) => <article className="admin-stat" key={String(label)}><span>{label}</span><strong>{value ?? "—"}</strong></article>)}
             </div>
+            <div className="admin-stats admin-usage-stats">
+              {[
+                ["Uploaded documents", overview?.documents_total], ["Ready documents", overview?.documents_ready],
+                ["Failed documents", overview?.documents_failed], ["Chat conversations", overview?.conversations_total],
+                ["Chat questions", overview?.questions_total], ["Questions this week", overview?.questions_last_7_days],
+                ["Google sign-in", overview ? (overview.google_ready ? "Ready" : "Needs setup") : undefined],
+                ["AI responses", overview ? (overview.ai_ready ? "Configured" : "Needs setup") : undefined],
+                ["Document storage", overview ? (overview.storage_ready ? "Configured" : "Needs setup") : undefined],
+              ].map(([label, value]) => <article className="admin-stat" key={String(label)}><span>{label}</span><strong>{value ?? "—"}</strong></article>)}
+            </div>
             <p className="admin-note">Revenue counts only payments confirmed by the M-Pesa callback. Reconcile any payment marked for review before granting access.</p>
           </>
         )}
         {tab === "members" && <>
           <div className="admin-section-heading"><div><h2>Members</h2><p>Review accounts and control workspace access.</p></div></div>
           <div className="admin-list">{members.map((member) => <article className="admin-row" key={member.id}><div className="admin-row-main"><strong>{member.full_name}{member.is_superuser && <span className="admin-tag">Admin</span>}</strong><span>{member.email}</span><small>{member.current_plan ?? "No plan"} · {member.subscription_status ?? "No subscription"}{member.expires_at ? ` · expires ${date(member.expires_at)}` : ""}</small></div><button className="admin-secondary" disabled={busy || member.is_superuser} onClick={() => void mutate(`/admin/members/${member.id}`, "PATCH", { is_active: !member.is_active })}>{member.is_active ? "Disable" : "Enable"}</button></article>)}{!loading && members.length === 0 && <p className="admin-note">No members found.</p>}</div>
+        </>}
+        {tab === "activity" && <>
+          <div className="admin-section-heading"><div><h2>Recent platform activity</h2><p>Registrations, document processing, chatbot questions, and payment events. Chat and document contents stay private.</p></div></div>
+          <div className="admin-list">{activities.map((event) => <article className="admin-row activity-row" key={event.id}><div className="activity-kind" aria-hidden="true">{event.kind === "document" ? <FileText size={18} /> : event.kind === "chat" ? <MessageCircle size={18} /> : <Activity size={18} />}</div><div className="admin-row-main"><strong>{event.summary}</strong><span>{event.member_name} · {event.member_email}</span></div><time>{new Date(event.created_at).toLocaleString()}</time></article>)}{!loading && activities.length === 0 && <p className="admin-note">No platform activity yet.</p>}</div>
         </>}
         {tab === "plans" && <>
           <div className="admin-section-heading"><div><h2>Subscription plans</h2><p>Set the monthly price and duration members will pay by M-Pesa.</p></div></div>

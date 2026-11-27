@@ -1,13 +1,15 @@
 """Platform administration endpoints restricted to verified superusers."""
 from datetime import datetime, timedelta, timezone
+from importlib.util import find_spec
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from app.api.dependencies import admin_user
 from app.db.session import get_db
-from app.models.entities import MpesaPayment, Subscription, SubscriptionPlan, User
-from app.schemas.billing import AdminMember, AdminOverview, AdminPayment, AdminSubscription, AdminSubscriptionUpdate, MemberUpdate, PlanCreate, PlanResponse, PlanUpdate
+from app.models.entities import Conversation, Document, KnowledgeBase, Message, MpesaPayment, Subscription, SubscriptionPlan, User
+from app.schemas.billing import AdminActivity, AdminMember, AdminOverview, AdminPayment, AdminSubscription, AdminSubscriptionUpdate, MemberUpdate, PlanCreate, PlanResponse, PlanUpdate
+from app.core.config import get_settings
 from app.services.mpesa import mpesa_ready
 
 router = APIRouter(prefix='/admin', tags=['Administration'], dependencies=[Depends(admin_user)])
@@ -15,16 +17,82 @@ router = APIRouter(prefix='/admin', tags=['Administration'], dependencies=[Depen
 @router.get('/overview', response_model=AdminOverview)
 def overview(db: Session=Depends(get_db)):
     now = datetime.now(timezone.utc)
+    week_ago = now - timedelta(days=7)
+    settings = get_settings()
+    try:
+        google_verifier_available = find_spec('google.auth') is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        google_verifier_available = False
     return AdminOverview(
         members_total=db.scalar(select(func.count(User.id))) or 0,
         members_active=db.scalar(select(func.count(User.id)).where(User.is_active.is_(True))) or 0,
+        documents_total=db.scalar(select(func.count(Document.id))) or 0,
+        documents_ready=db.scalar(select(func.count(Document.id)).where(Document.status == 'ready')) or 0,
+        documents_failed=db.scalar(select(func.count(Document.id)).where(Document.status == 'failed')) or 0,
+        conversations_total=db.scalar(select(func.count(Conversation.id))) or 0,
+        questions_total=db.scalar(select(func.count(Message.id)).where(Message.role == 'user')) or 0,
+        questions_last_7_days=db.scalar(select(func.count(Message.id)).where(Message.role == 'user', Message.created_at >= week_ago)) or 0,
         subscriptions_active=db.scalar(select(func.count(Subscription.id)).where(Subscription.status == 'active', Subscription.starts_at <= now, Subscription.expires_at > now)) or 0,
         subscriptions_expiring=db.scalar(select(func.count(Subscription.id)).where(Subscription.status == 'active', Subscription.starts_at <= now, Subscription.expires_at > now, Subscription.expires_at <= now + timedelta(days=7))) or 0,
         payments_total=db.scalar(select(func.count(MpesaPayment.id))) or 0,
         payments_pending=db.scalar(select(func.count(MpesaPayment.id)).where(MpesaPayment.status.in_(['pending', 'review']))) or 0,
         revenue_kes=db.scalar(select(func.coalesce(func.sum(MpesaPayment.amount_kes), 0)).where(MpesaPayment.status == 'paid')) or 0,
         mpesa_ready=mpesa_ready(),
+        google_ready=bool(settings.GOOGLE_CLIENT_ID.strip()) and google_verifier_available,
+        ai_ready=bool(settings.DEEPSEEK_API_KEY.strip()),
+        storage_ready=bool(settings.CLOUDINARY_CLOUD_NAME and settings.CLOUDINARY_API_KEY and settings.CLOUDINARY_API_SECRET),
     )
+
+@router.get('/activity', response_model=list[AdminActivity])
+def recent_activity(db: Session=Depends(get_db)):
+    """Return recent event metadata without exposing document or chat contents."""
+    events: list[AdminActivity] = []
+    for user in db.scalars(select(User).order_by(User.created_at.desc()).limit(25)):
+        events.append(AdminActivity(
+            id=f'registration-{user.id}', kind='registration', member_name=user.full_name,
+            member_email=user.email, summary='Registered an account', created_at=user.created_at,
+        ))
+
+    uploaded = db.execute(
+        select(Document, User)
+        .join(KnowledgeBase, KnowledgeBase.id == Document.knowledge_base_id)
+        .join(User, User.id == KnowledgeBase.user_id)
+        .order_by(Document.created_at.desc()).limit(25)
+    ).all()
+    for document, user in uploaded:
+        events.append(AdminActivity(
+            id=f'document-{document.id}', kind='document', member_name=user.full_name,
+            member_email=user.email,
+            summary=f'Uploaded a document ({document.status})', created_at=document.created_at,
+        ))
+
+    questions = db.execute(
+        select(Message, User)
+        .join(Conversation, Conversation.id == Message.conversation_id)
+        .join(User, User.id == Conversation.user_id)
+        .where(Message.role == 'user')
+        .order_by(Message.created_at.desc()).limit(25)
+    ).all()
+    for message, user in questions:
+        events.append(AdminActivity(
+            id=f'question-{message.id}', kind='chat', member_name=user.full_name,
+            member_email=user.email, summary='Asked a question in the chatbot',
+            created_at=message.created_at,
+        ))
+
+    payments = db.execute(
+        select(MpesaPayment, User)
+        .join(User, User.id == MpesaPayment.user_id)
+        .order_by(MpesaPayment.created_at.desc()).limit(25)
+    ).all()
+    for payment, user in payments:
+        events.append(AdminActivity(
+            id=f'payment-{payment.id}', kind='payment', member_name=user.full_name,
+            member_email=user.email, summary=f'M-Pesa payment {payment.status}',
+            created_at=payment.created_at,
+        ))
+
+    return sorted(events, key=lambda event: event.created_at, reverse=True)[:60]
 
 @router.get('/members', response_model=list[AdminMember])
 def members(db: Session=Depends(get_db)):

@@ -987,9 +987,15 @@ nav button.selected, .folder-tree .folder-file-row:hover:not(:disabled), .folder
 .billing-shell .admin-secondary:hover,
 .billing-shell .admin-back:hover { background: #e5e7eb; }
 .billing-shell .admin-primary { color: #fff; }
+.admin-usage-stats { margin-top: 10px; }
+.activity-row { justify-content: flex-start; }
+.activity-kind { display: grid; flex: 0 0 36px; width: 36px; height: 36px; place-items: center; border-radius: 9px; background: #dfe7dc; color: #45664b; }
+.activity-row .admin-row-main { flex: 1; }
+.activity-row time { flex: 0 0 auto; text-align: right; }
 
 @media (max-width: 700px) {
   .billing-shell { background: #f3f4f6; }
   .billing-shell > main.admin-content { background: #f3f4f6; }
   .billing-shell .billing-current { align-items: flex-start; }
+  .activity-row time { width: 100%; margin-left: 44px; text-align: left; }
 }

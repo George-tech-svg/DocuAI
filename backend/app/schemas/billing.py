@@ -65,12 +65,29 @@ class BillingStatus(BaseModel):
 class AdminOverview(BaseModel):
     members_total: int
     members_active: int
+    documents_total: int
+    documents_ready: int
+    documents_failed: int
+    conversations_total: int
+    questions_total: int
+    questions_last_7_days: int
     subscriptions_active: int
     subscriptions_expiring: int
     payments_total: int
     payments_pending: int
     revenue_kes: int
     mpesa_ready: bool
+    google_ready: bool
+    ai_ready: bool
+    storage_ready: bool
+
+class AdminActivity(BaseModel):
+    id: str
+    kind: str
+    member_name: str
+    member_email: str
+    summary: str
+    created_at: datetime
 
 class AdminMember(BaseModel):
     id: UUID

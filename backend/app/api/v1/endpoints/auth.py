@@ -36,8 +36,10 @@ def admin_bootstrap_status(db: Session=Depends(get_db)):
 def bootstrap_admin(data: AdminBootstrapRequest, db: Session=Depends(get_db)):
     """Create or promote the first and only super administrator."""
     expected_code = get_settings().ADMIN_BOOTSTRAP_CODE
-    if not expected_code or not secrets.compare_digest(data.setup_code, expected_code):
-        raise HTTPException(403, 'Administrator setup is unavailable.')
+    if not expected_code:
+        raise HTTPException(503, 'First-administrator setup is not configured. Set ADMIN_BOOTSTRAP_CODE in the backend environment.')
+    if not secrets.compare_digest(data.setup_code, expected_code):
+        raise HTTPException(403, 'The private setup code is incorrect. Check the ADMIN_BOOTSTRAP_CODE value in the Vercel backend environment.')
 
     # Serialize concurrent first-time setup requests so only one can succeed.
     db.execute(text("SELECT pg_advisory_xact_lock(hashtext('documind_one_time_admin_bootstrap'))"))
