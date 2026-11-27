@@ -61,11 +61,14 @@ export default function AssistantMessage({ content }: { content: string }) {
       continue;
     }
 
-    const heading = line.match(/^#{1,3}\s+(.+)$/) ?? line.match(/^\*\*(.+)\*\*$/);
-    if (heading) {
+    const markdownHeading = line.match(/^(#{1,3})\s+(.+)$/);
+    const boldHeading = line.match(/^\*\*(.+)\*\*$/);
+    if (markdownHeading || boldHeading) {
       flushParagraph();
       flushList();
-      blocks.push(<h4 key={`h-${blocks.length}`}>{renderInline(heading[1], `h-${blocks.length}`)}</h4>);
+      const level = markdownHeading?.[1].length ?? 2;
+      const Heading = level === 1 ? "h3" : level === 2 ? "h4" : "h5";
+      blocks.push(<Heading key={`h-${blocks.length}`}>{renderInline(markdownHeading?.[2] ?? boldHeading![1], `h-${blocks.length}`)}</Heading>);
       continue;
     }
 

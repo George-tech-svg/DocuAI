@@ -128,7 +128,7 @@ body { overflow: hidden; }
   .shell > main { flex: 1 1 0; width: 100%; height: auto; min-height: 0; }
 }
 
-.shell { display: flex; width: 100%; height: 100dvh; min-height: 0; overflow: hidden; background: #e7f0e8; }
+.shell { display: flex; width: 100%; height: 100dvh; min-height: 0; overflow: hidden; background: #4a90e2; }
 aside { flex: 0 0 var(--sidebar-width, 285px); width: var(--sidebar-width, 285px); min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; background: #f0f3eb; border-right: 1px solid #d1dfd2; padding: 26px 18px; display: flex; flex-direction: column; gap: 18px; }
 .workspace-resizer { position: relative; z-index: 3; flex: 0 0 8px; width: 8px; cursor: col-resize; touch-action: none; background: transparent; }
 .workspace-resizer::after { position: absolute; inset: 0 3px; content: ""; border-radius: 4px; background: #bfd0dc; transition: background 120ms ease; }
@@ -201,8 +201,11 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
 .assistant-content { line-height: 1.65; }
 .assistant-content p { margin: 0 0 10px; }
 .assistant-content p:last-child, .assistant-content ul:last-child, .assistant-content ol:last-child { margin-bottom: 0; }
-.assistant-content h4 { margin: 14px 0 6px; font-size: 14px; line-height: 1.4; }
-.assistant-content h4:first-child { margin-top: 0; }
+.assistant-content h3, .assistant-content h4, .assistant-content h5 { display: block; color: #244f70; line-height: 1.4; }
+.assistant-content h3 { margin: 0 0 9px; font-size: 17px; }
+.assistant-content h4 { margin: 15px 0 6px; font-size: 14px; }
+.assistant-content h5 { margin: 12px 0 5px; font-size: 13px; }
+.assistant-content h3:first-child, .assistant-content h4:first-child, .assistant-content h5:first-child { margin-top: 0; }
 .assistant-content ul, .assistant-content ol { margin: 5px 0 12px; padding-left: 22px; }
 .assistant-content li { padding-left: 2px; margin: 3px 0; }
 .assistant-content strong { font-weight: 700; }
@@ -652,8 +655,10 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
 
 /* Keep the phone workspace on the same blue, sage, and soft neutral palette as desktop. */
 @media (max-width: 700px) {
-  :root, html, body, #root, .shell, main { background: #007bff; }
-  .mobile-topbar { background: #e4edf2; }
+  :root, html, body, #root, .shell, main { background: #4a90e2; }
+  .mobile-topbar { background: #4a90e2; border-bottom-color: #3477bd; }
+  .mobile-topbar .brand { color: #fff; }
+  .mobile-topbar .brand span { color: #d7edff; }
   .shell > aside { background: #f0f3eb; background-image: none; }
   .shell > main > .chat {
     background: #f1f4f1;

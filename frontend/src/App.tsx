@@ -18,7 +18,6 @@ import {
   Pin,
   MessageCircle,
   Plus,
-  Printer,
   Send,
   Settings as SettingsIcon,
   ShieldCheck,
@@ -33,6 +32,7 @@ import AdminDashboard from "./AdminDashboard";
 import BillingPage from "./BillingPage";
 import TermsPrivacy from "./TermsPrivacy";
 import GoogleSignIn from "./GoogleSignIn";
+import { downloadAnswerPdf, downloadConversationPdf } from "./pdfExport";
 import type {
   AuthenticationResponse,
   ChatMessage,
@@ -513,69 +513,6 @@ export default function App() {
     }
   }
 
-  /** Download a complete saved exchange as a Markdown transcript. */
-  function downloadConversation(title: string, chatMessages: ChatMessage[]) {
-    const transcript = [
-      `# ${title}`,
-      `Exported from DocuMind AI on ${new Date().toLocaleString()}`,
-      "",
-      ...chatMessages.flatMap((message) => {
-        const section = [
-          message.role === "user" ? "## You" : "## DocuMind AI",
-          message.content,
-          "",
-        ];
-        if (message.role === "assistant" && message.sources?.length) {
-          section.push("### Sources");
-          for (const source of message.sources) {
-            const page = source.page_number == null ? "" : `, page ${source.page_number}`;
-            section.push(`- ${source.filename}${page}: ${source.excerpt}`);
-          }
-          section.push("");
-        }
-        return section;
-      }),
-    ].join("\n");
-    const blob = new Blob([transcript], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    const safeName = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "documind-chat";
-    link.href = url;
-    link.download = `${safeName}.md`;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-
-  /** Open one answer in a clean print view; the browser can save it as PDF. */
-  function printAssistantAnswer(message: ChatMessage, title: string) {
-    const printWindow = window.open("", "_blank", "width=900,height=700");
-    if (!printWindow) {
-      setErrorMessage("Your browser blocked the print window. Allow pop-ups for this site, then try again.");
-      return;
-    }
-    printWindow.opener = null;
-    const entities: Record<string, string> = {
-      "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;",
-    };
-    const escapeHtml = (value: string) => value.replace(/[&<>\"']/g, (character) => entities[character]);
-    const sources = message.sources?.length
-      ? `<section><h2>Sources</h2><ul>${message.sources.map((source, index) => {
-          const page = source.page_number == null ? "" : `, page ${source.page_number}`;
-          return `<li><strong>[${index + 1}] ${escapeHtml(source.filename + page)}</strong><br>${escapeHtml(source.excerpt)}</li>`;
-        }).join("")}</ul></section>`
-      : "";
-    printWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>
-      body{font:16px/1.65 Arial,sans-serif;color:#20382e;max-width:780px;margin:48px auto;padding:0 24px}
-      h1{font-size:24px;margin-bottom:8px} .meta{color:#65776a;font-size:13px;margin-bottom:28px}
-      article{white-space:pre-wrap;overflow-wrap:anywhere} h2{font-size:18px;margin-top:28px}
-      li{margin:10px 0} @media print{body{margin:0 auto;padding:0 10mm}}
-      </style></head><body><h1>${escapeHtml(title)}</h1><p class="meta">Prepared with DocuMind AI · Review against the cited source before teaching or sharing.</p><article>${escapeHtml(message.content)}</article>${sources}</body></html>`);
-    printWindow.document.close();
-    printWindow.setTimeout(() => printWindow.print(), 250);
-  }
-
   /** Download a history item without first navigating into it. */
   async function handleDownloadConversation(conversation: ConversationRecord) {
     try {
@@ -583,7 +520,7 @@ export default function App() {
         `/conversations/${conversation.id}/messages`,
         token,
       );
-      downloadConversation(conversation.title, saved);
+      await downloadConversationPdf(conversation.title, saved);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
@@ -1252,10 +1189,10 @@ export default function App() {
                   title="Download this conversation"
                   aria-label="Download this conversation"
                   disabled={isBusy}
-                  onClick={() => downloadConversation(
+                  onClick={() => void downloadConversationPdf(
                     conversationHistory.find((item) => item.id === conversationId)?.title ?? "DocuMind conversation",
                     messages,
-                  )}
+                  ).catch((error) => setErrorMessage(getErrorMessage(error)))}
                 >
                   <Download size={17} />
                 </button>
@@ -1282,7 +1219,7 @@ export default function App() {
                 <BookOpen size={36} />
                 <h2>What would you like to learn?</h2>
                 <p>{selectedDocumentId
-                  ? "Ask about this file or choose a ready-made task. Your chats stay under the file, and you can print useful answers for class."
+                  ? "Ask about this file or choose a ready-made task. Your chats stay under the file, and you can download useful answers as PDFs."
                   : "Choose a ready file from the folder sidebar. Each file keeps its own chat history."}</p>
                 {selectedDocumentId && (
                   <div className="prompt-suggestions">
@@ -1304,12 +1241,12 @@ export default function App() {
                   <button
                     className="answer-print"
                     type="button"
-                    title="Print or save this answer as PDF"
-                    onClick={() => printAssistantAnswer(
+                    title="Download this answer as PDF"
+                    onClick={() => void downloadAnswerPdf(
                       message,
                       conversationHistory.find((item) => item.id === conversationId)?.title ?? "DocuMind teaching notes",
-                    )}
-                  ><Printer size={14} /> Print / save PDF</button>
+                    ).catch((error) => setErrorMessage(getErrorMessage(error)))}
+                  ><Download size={14} /> Download PDF</button>
                 )}
                 {message.sources && message.sources.length > 0 && (
                   <div className="sources">
@@ -1365,7 +1302,7 @@ export default function App() {
               ))}
               <div className="help-note">
                 <strong>Your work is saved</strong>
-                <p>Each question and answer is stored in Chat History for this folder. Select a past chat to reopen it, or use its download icon to save the exchange and cited sources as a Markdown file.</p>
+                <p>Each question and answer is stored in Chat History for this folder. Select a past chat to reopen it, or download the full exchange and cited sources as a PDF.</p>
               </div>
             </div>
           </section>
