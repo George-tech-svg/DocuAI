@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 import secrets
 from sqlalchemy import select, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.api.dependencies import current_user
@@ -107,31 +107,40 @@ def google_login(data: GoogleLoginRequest, db: Session=Depends(get_db)):
     if not identity.get('sub') or not email or not identity.get('email_verified'):
         raise HTTPException(401, 'Google did not provide a verified email address.')
 
-    user = db.scalar(select(User).where(User.email == email).with_for_update())
-    if user is not None:
-        if not user.is_active:
-            raise HTTPException(403, 'This account is disabled. Contact support for help.')
-        # Verified matching email links Google to an existing password account.
-        user.is_verified = True
-        db.commit()
-        db.refresh(user)
-    else:
-        user = User(
-            full_name=full_name,
-            email=email,
-            password_hash=None,
-            is_verified=True,
-        )
-        db.add(user)
-        try:
+    try:
+        user = db.scalar(select(User).where(User.email == email).with_for_update())
+        if user is not None:
+            if not user.is_active:
+                raise HTTPException(403, 'This account is disabled. Contact support for help.')
+            # A verified matching email links Google to the existing account.
+            user.is_verified = True
             db.commit()
             db.refresh(user)
-        except IntegrityError:
-            # Another simultaneous Google sign-in may have created the same email.
-            db.rollback()
-            user = db.scalar(select(User).where(User.email == email))
-            if user is None or not user.is_active:
-                raise HTTPException(409, 'Could not finish creating this Google account. Please try again.')
+        else:
+            user = User(
+                full_name=full_name,
+                email=email,
+                password_hash=None,
+                is_verified=True,
+            )
+            db.add(user)
+            try:
+                db.commit()
+                db.refresh(user)
+            except IntegrityError as exc:
+                # Handle a simultaneous signup, or an unapplied nullable-password migration.
+                db.rollback()
+                user = db.scalar(select(User).where(User.email == email))
+                if user is None:
+                    raise HTTPException(503, 'Google could not save this account. Apply the latest database migration with npm run migrate, then try again.') from exc
+                if not user.is_active:
+                    raise HTTPException(403, 'This account is disabled. Contact support for help.')
+                user.is_verified = True
+                db.commit()
+                db.refresh(user)
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(503, 'Google sign-in could not access the account database. Check the backend database connection and migrations, then try again.') from exc
 
     return AuthResponse(user=UserResponse.model_validate(user), access_token=create_access_token(str(user.id)))
 

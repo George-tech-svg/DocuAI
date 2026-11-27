@@ -133,6 +133,7 @@ export default function App() {
   const [adminAccountExists, setAdminAccountExists] = useState(false);
   const [adminBootstrapStatus, setAdminBootstrapStatus] = useState<"loading" | "ready" | "error">("loading");
   const [showAdminMenu, setShowAdminMenu] = useState(false);
+  const [isAdminLogin, setIsAdminLogin] = useState(false);
   const [showAdminBootstrap, setShowAdminBootstrap] = useState(false);
   const [adminSetupCode, setAdminSetupCode] = useState("");
 
@@ -396,6 +397,11 @@ export default function App() {
         setConfirmPassword("");
         setHasAcceptedTerms(false);
         setSuccessMessage("Account created successfully!");
+        return;
+      }
+      if (isAdminLogin && !response.user.is_superuser) {
+        setErrorMessage("This account does not have administrator access. Sign in with an administrator account.");
+        setPassword("");
         return;
       }
       localStorage.setItem("documind_token", response.access_token);
@@ -785,9 +791,9 @@ export default function App() {
           <button className="auth-admin-dot" type="button" aria-label="Open account tools" aria-expanded={showAdminMenu} title="Account tools" onClick={() => setShowAdminMenu((open) => !open)}><span /></button>
           {showAdminMenu && (
             <div className="auth-admin-menu" role="menu" aria-label="Account tools">
-              <button type="button" role="menuitem" onClick={() => { setIsRegistering(false); setShowAdminBootstrap(false); setShowAdminMenu(false); setHasAcceptedTerms(false); setErrorMessage(""); setSuccessMessage(""); }}>Admin sign in</button>
+          <button type="button" role="menuitem" onClick={() => { setIsRegistering(false); setIsAdminLogin(true); setShowAdminBootstrap(false); setShowAdminMenu(false); setHasAcceptedTerms(false); setErrorMessage(""); setSuccessMessage(""); setPassword(""); }}>Admin sign in</button>
               {adminBootstrapAvailable
-                ? <button type="button" role="menuitem" onClick={() => { setShowAdminBootstrap(true); setShowAdminMenu(false); setHasAcceptedTerms(false); setFullName(""); setEmail(""); setPassword(""); setAdminSetupCode(""); setErrorMessage(""); }}>Set up first administrator</button>
+                ? <button type="button" role="menuitem" onClick={() => { setIsAdminLogin(false); setShowAdminBootstrap(true); setShowAdminMenu(false); setHasAcceptedTerms(false); setFullName(""); setEmail(""); setPassword(""); setAdminSetupCode(""); setErrorMessage(""); }}>Set up first administrator</button>
                 : <p>{adminBootstrapStatus === "loading"
                   ? "Checking administrator setup…"
                   : adminBootstrapStatus === "error"
@@ -824,8 +830,8 @@ export default function App() {
             <BookOpen /> DocuMind <span>AI</span>
           </div>
 
-          <h1>{isRegistering ? "Create your account" : "Welcome back"}</h1>
-          <p>Turn your documents into trusted answers.</p>
+          <h1>{isRegistering ? "Create your account" : isAdminLogin ? "Administrator sign in" : "Welcome back"}</h1>
+          <p>{isAdminLogin ? "Sign in with the email and password for your administrator account." : "Turn your documents into trusted answers."}</p>
 
           {isRegistering && (
             <div className="auth-terms auth-google-terms">
@@ -840,11 +846,11 @@ export default function App() {
             </div>
           )}
 
-          <GoogleSignIn
+          {!isAdminLogin && <GoogleSignIn
             mode={isRegistering ? "register" : "login"}
             acceptedTerms={hasAcceptedTerms}
             onCredential={(credential, mode, accepted) => void handleGoogleSignIn(credential, mode, accepted)}
-          />
+          />}
 
           {isRegistering ? (
             <div className="auth-register-fields">
@@ -886,15 +892,16 @@ export default function App() {
               className="auth-toggle"
               onClick={() => {
                 setIsRegistering(!isRegistering);
+                setIsAdminLogin(false);
                 setConfirmPassword("");
                 setHasAcceptedTerms(false);
                 setErrorMessage("");
                 setSuccessMessage("");
               }}
             >
-              {isRegistering
+                {isRegistering
                 ? "Already have an account? Sign in"
-                : "New here? Create an account"}
+                : isAdminLogin ? "Back to regular sign in" : "New here? Create an account"}
             </button>
           </p>
         </form>}
