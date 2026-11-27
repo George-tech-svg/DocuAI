@@ -101,6 +101,14 @@ function makeSafeFilename(title: string): string {
 }
 
 export async function downloadConversationPdf(title: string, messages: ChatMessage[]) {
+  await saveConversationsPdf(title, [{ title, messages }], false);
+}
+
+export async function downloadConversationsPdf(title: string, conversations: { title: string; messages: ChatMessage[] }[]) {
+  await saveConversationsPdf(title, conversations, true);
+}
+
+async function saveConversationsPdf(title: string, conversations: { title: string; messages: ChatMessage[] }[], includeConversationTitles: boolean) {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   let y = 24;
@@ -110,25 +118,40 @@ export async function downloadConversationPdf(title: string, messages: ChatMessa
   const titleLines = doc.splitTextToSize(pdfText(title), PAGE_WIDTH - LEFT - RIGHT);
   doc.text(titleLines, LEFT, y);
   y += titleLines.length * 9 + 4;
-  y = addParagraph(doc, `Saved conversation · ${new Date().toLocaleString()}`, y, { size: 9, color: [105, 119, 133] });
+  y = addParagraph(doc, `${includeConversationTitles ? "Saved chat history" : "Saved conversation"} · ${new Date().toLocaleString()}`, y, { size: 9, color: [105, 119, 133] });
   y += 4;
 
-  for (const message of messages) {
-    if (y + 12 > PAGE_HEIGHT - BOTTOM) { doc.addPage(); y = 20; }
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(13);
-    doc.setTextColor(34, 76, 112);
-    doc.text(message.role === "user" ? "Question" : "Answer", LEFT, y);
-    y += 8;
-    y = message.role === "assistant"
-      ? addMarkdownAnswer(doc, message.content, y)
-      : addParagraph(doc, message.content, y);
-    if (message.role === "assistant") y = addSources(doc, message, y);
-    y += 6;
+  for (const conversation of conversations) {
+    if (includeConversationTitles) {
+      if (y + 14 > PAGE_HEIGHT - BOTTOM) { doc.addPage(); y = 20; }
+      y += 3;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(14);
+      doc.setTextColor(34, 76, 112);
+      const headingLines = doc.splitTextToSize(pdfText(conversation.title || "Saved conversation"), PAGE_WIDTH - LEFT - RIGHT);
+      doc.text(headingLines, LEFT, y);
+      y += headingLines.length * 7 + 2;
+    }
+
+    for (const message of conversation.messages) {
+      if (y + 12 > PAGE_HEIGHT - BOTTOM) { doc.addPage(); y = 20; }
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      doc.setTextColor(34, 76, 112);
+      doc.text(message.role === "user" ? "Question" : "Answer", LEFT, y);
+      y += 8;
+      y = message.role === "assistant"
+        ? addMarkdownAnswer(doc, message.content, y)
+        : addParagraph(doc, message.content, y);
+      if (message.role === "assistant") y = addSources(doc, message, y);
+      y += 6;
+    }
+    y += 3;
   }
 
   addFooter(doc);
-  doc.save(`${makeSafeFilename(title)}.pdf`);
+  const suffix = includeConversationTitles ? "-chat-history" : "";
+  doc.save(`${makeSafeFilename(title)}${suffix}.pdf`);
 }
 
 export function downloadAnswerPdf(message: ChatMessage, title: string) {

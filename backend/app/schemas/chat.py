@@ -2,11 +2,12 @@
 
 from datetime import datetime
 from uuid import UUID
+from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 class ChatRequest(BaseModel):
-    knowledge_base_id: UUID
-    document_id: UUID | None = None
+    scope_type: Literal['document', 'folder']
+    scope_id: UUID
     question: str = Field(min_length=2, max_length=3000)
     conversation_id: UUID | None = None
 
@@ -27,6 +28,7 @@ class ConversationResponse(BaseModel):
     title: str
     knowledge_base_id: UUID | None
     document_id: UUID | None = None
+    scope_type: Literal['document', 'folder'] = 'document'
     created_at: datetime
     is_archived: bool = False
     is_pinned: bool = False
@@ -38,3 +40,4 @@ class MessageResponse(BaseModel):
     content: str
     created_at: datetime
     sources: list[Source] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)

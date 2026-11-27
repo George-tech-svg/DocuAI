@@ -89,6 +89,14 @@ main { display: grid; grid-template-rows: minmax(0, 1fr); flex: 1 1 0; width: 0;
 .chat-heading h2 { margin: 0 0 4px; font-size: 23px; }
 .chat-heading p, .upload-panel-heading p { margin: 0; color: #657985; font-size: 13px; }
 .chat-actions { display: flex; align-items: center; gap: 10px; }
+.chat-scope-row { display: flex; flex: 0 0 auto; justify-content: flex-start; padding: 9px 0 2px; }
+.chat-scope-toggle { display: inline-flex; align-items: center; gap: 3px; padding: 3px; border: 1px solid #cbd9df; border-radius: 10px; background: #e8eeee; }
+.chat-scope-toggle button { min-height: 32px; padding: 6px 10px; border: 0; border-radius: 7px; background: transparent; color: #526b78; font-size: 12px; font-weight: 650; white-space: nowrap; }
+.chat-scope-toggle button.active { background: #fff; color: #255f88; box-shadow: 0 1px 3px #19364b1a; }
+.chat-scope-toggle button:disabled:not(.active) { opacity: .45; cursor: not-allowed; }
+.chat-scope-toggle button:focus-visible { position: relative; z-index: 1; outline: 3px solid #327fc1; outline-offset: 2px; }
+.folder-scope-history { margin: 2px 0 7px 20px; padding: 4px 0 5px 8px; border-left: 1px solid #bfd0d6; }
+.folder-no-ready { max-width: 560px; padding: 13px 16px; border: 1px solid #ead9a7; border-radius: 10px; background: #fff8df; color: #614b18; }
 .chat-actions .pill { background: #dce9ee; color: #315f7d; }
 .upload-trigger { display: inline-flex; align-items: center; gap: 8px; border: 0; border-radius: 9px; padding: 10px 14px; background: #327fc1; color: #fff; font-weight: 650; }
 .upload-trigger:hover { background: #2569a7; }
@@ -533,6 +541,7 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
 
 @media (max-width: 480px) {
   .chat-actions { gap: 5px; }
+  .chat-scope-toggle button { min-height: 34px; padding: 6px 8px; font-size: 11px; }
   .chat-tool-button { width: 34px; height: 34px; }
   .prompt-suggestions { grid-template-columns: 1fr; }
   .chat-heading { align-items: flex-start; }
@@ -993,9 +1002,163 @@ nav button.selected, .folder-tree .folder-file-row:hover:not(:disabled), .folder
 .activity-row .admin-row-main { flex: 1; }
 .activity-row time { flex: 0 0 auto; text-align: right; }
 
+.payment-recovery-section { display: grid; gap: 14px; margin-top: 30px; }
+.payment-recovery-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .05);
+}
+.payment-recovery-form label,
+.recovery-plan-field,
+.recovery-reason-field { display: grid; gap: 7px; color: #374151; font-size: 13px; font-weight: 700; }
+.payment-recovery-form input,
+.payment-recovery-form textarea,
+.recovery-plan-field select,
+.recovery-reason-field textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  color: #1f2937;
+  font: inherit;
+  font-weight: 450;
+}
+.payment-recovery-form textarea,
+.recovery-reason-field textarea { min-height: 86px; resize: vertical; }
+.payment-recovery-form .recovery-message-field { grid-column: 1 / -1; }
+.payment-recovery-form > button { justify-self: start; }
+.recovery-request-list,
+.payment-recovery-admin-list { display: grid; gap: 10px; }
+.recovery-request-list h3 { margin: 8px 0 2px; color: #1f2937; font-size: 17px; }
+.payment-recovery-admin-list { margin-top: 14px; }
+.recovery-audit-section { display: grid; gap: 8px; margin-top: 30px; }
+.recovery-audit-section h2 { margin: 0; color: #1f2937; font-size: 20px; }
+.recovery-audit-section > p { margin: 0 0 4px; color: #4b5563; font-size: 13px; }
+.payment-recovery-card { display: grid; gap: 14px; align-items: stretch; padding: 18px; }
+.recovery-card-heading { display: flex; justify-content: space-between; }
+.recovery-evidence { padding: 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f9fafb; }
+.recovery-evidence strong,
+.recovery-candidates > strong { color: #1f2937; font-size: 13px; }
+.recovery-evidence p { margin: 7px 0 0; color: #4b5563; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
+.recovery-candidates { display: grid; gap: 8px; }
+.recovery-match { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 10px; padding: 11px; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; cursor: pointer; }
+.recovery-match input { margin: 3px 0 0; accent-color: #327fc1; }
+.recovery-match span { display: grid; gap: 3px; min-width: 0; }
+.recovery-match b { color: #1f2937; font-size: 13px; }
+.recovery-match small { color: #4b5563; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.recovery-plan-field,
+.recovery-reason-field { max-width: 560px; }
+.recovery-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.recovery-resolution { display: grid; gap: 5px; padding: 12px; border-radius: 8px; background: #f3f4f6; color: #374151; }
+.recovery-resolution p { margin: 0; font-size: 13px; }
+.recovery-resolution small { color: #6b7280; font-size: 11px; overflow-wrap: anywhere; }
+
+/* Explain upload constraints before the file picker and keep recovery actions visible. */
+.upload-panel .upload > small { max-width: 360px; line-height: 1.5; }
+.upload-error { display: grid; gap: 9px; flex: 0 0 auto; max-height: 150px; overflow-y: auto; }
+.upload-try-another,
+.failed-upload-action,
+.folder-document-failure button {
+  width: fit-content;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid #b7cbd6;
+  border-radius: 8px;
+  background: #fff;
+  color: #285d7d;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.upload-try-another:hover,
+.failed-upload-action:hover,
+.folder-document-failure button:hover { background: #e8f0f1; }
+.upload-try-another:disabled,
+.failed-upload-action:disabled,
+.folder-document-failure button:disabled { opacity: .55; cursor: not-allowed; }
+.upload-success { flex: 0 0 auto; border-color: #b8d7bd; background: #eaf5eb; color: #285d31; }
+.upload-filelist .file-failed { align-items: flex-start; }
+.upload-filelist .file-failed > div { min-width: 0; flex: 1 1 auto; }
+.upload-filelist .failed-upload-action { flex: 0 0 auto; max-width: 150px; white-space: normal; }
+.upload-filelist .document-error { display: block; line-height: 1.45; }
+.folder-document-failure {
+  display: grid;
+  gap: 6px;
+  margin: 2px 8px 8px 30px;
+  padding: 9px;
+  border: 1px solid #ecd2ca;
+  border-radius: 8px;
+  background: #fff7f4;
+}
+.folder-document-failure small { color: #8b3b2f; font-size: 11px; line-height: 1.45; }
+
+.delete-confirm-backdrop {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  padding: max(18px, env(safe-area-inset-top)) 16px max(18px, env(safe-area-inset-bottom));
+  background: #152c3dcc;
+}
+.delete-confirm-dialog {
+  display: grid;
+  gap: 12px;
+  width: min(620px, 100%);
+  max-height: calc(100dvh - 36px);
+  overflow-y: auto;
+  padding: 24px;
+  border: 1px solid #d1d5db;
+  border-radius: 16px;
+  background: #f9faf8;
+  box-shadow: 0 22px 70px #10263d55;
+  color: #263c4b;
+}
+.delete-confirm-dialog h2 { margin: 0; color: #1f2937; font-size: 22px; }
+.delete-confirm-dialog > p { margin: 0; color: #4b5563; font-size: 14px; line-height: 1.55; }
+.delete-confirm-dialog .delete-confirm-item { padding: 10px 12px; border-radius: 8px; background: #edf1ed; color: #24394b; font-weight: 700; overflow-wrap: anywhere; }
+.delete-confirm-loading { color: #526b78 !important; }
+.delete-confirm-error { display: grid; gap: 9px; margin: 0; }
+.delete-confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 9px; margin-top: 8px; }
+.delete-confirm-actions button,
+.delete-confirm-retry {
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px solid #cbd5dc;
+  border-radius: 9px;
+  background: #fff;
+  color: #344e61;
+  font-size: 13px;
+  font-weight: 700;
+}
+.delete-confirm-actions button:hover,
+.delete-confirm-retry:hover { background: #edf2f3; }
+.delete-confirm-actions .delete-confirm-download { border-color: #327fc1; background: #327fc1; color: #fff; }
+.delete-confirm-actions .delete-confirm-download:hover { background: #2569a7; }
+.delete-confirm-actions .delete-confirm-anyway { border-color: #b74b46; background: #b74b46; color: #fff; }
+.delete-confirm-actions .delete-confirm-anyway:hover { background: #983a36; }
+.delete-confirm-actions button:disabled { opacity: .48; cursor: not-allowed; }
+.delete-confirm-retry { justify-self: start; min-height: 34px; padding: 6px 10px; }
+
 @media (max-width: 700px) {
   .billing-shell { background: #f3f4f6; }
   .billing-shell > main.admin-content { background: #f3f4f6; }
   .billing-shell .billing-current { align-items: flex-start; }
   .activity-row time { width: 100%; margin-left: 44px; text-align: left; }
+  .payment-recovery-form { grid-template-columns: minmax(0, 1fr); padding: 14px; }
+  .payment-recovery-form .recovery-message-field { grid-column: auto; }
+  .payment-recovery-card { padding: 13px; }
+  .delete-confirm-dialog { padding: 19px; border-radius: 14px; }
+  .delete-confirm-actions { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .delete-confirm-actions button { width: 100%; }
+  .upload-filelist .file-failed { flex-wrap: wrap; }
+  .upload-filelist .failed-upload-action { margin-left: 38px; max-width: none; }
 }

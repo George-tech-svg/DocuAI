@@ -19,7 +19,7 @@ from app.schemas.chat import ChatRequest, ChatResponse, Source, ConversationResp
 from app.services.document_service import owned_kb, owned_document
 from app.services.retrieval import retrieve
 from app.services.embeddings import embed_texts
-from app.services.llm import answer_question
+from app.services.llm import answer_question, rewrite_follow_up_question
 router = APIRouter(tags=['Chat'])
 logger = logging.getLogger(__name__)
 
@@ -28,32 +28,64 @@ class ConversationUpdate(BaseModel):
     is_archived: bool | None = None
     is_pinned: bool | None = None
 
-def _prepare_chat(user_id, data: ChatRequest, query_vector):
+def _resolve_scope(db, user_id, data: ChatRequest):
+    if data.scope_type == 'folder':
+        knowledge_base_id = data.scope_id
+        document_id = None
+        owned_kb(db, user_id, knowledge_base_id)
+    else:
+        document = db.scalar(select(Document).where(Document.id == data.scope_id))
+        if document is None:
+            raise HTTPException(404, 'Document not found')
+        knowledge_base_id = document.knowledge_base_id
+        document_id = document.id
+        owned_document(db, user_id, knowledge_base_id, document_id)
+    conversation = None
+    if data.conversation_id:
+        conversation = db.scalar(select(Conversation).where(
+            Conversation.id == data.conversation_id,
+            Conversation.user_id == user_id,
+            Conversation.knowledge_base_id == knowledge_base_id,
+            Conversation.document_id == document_id,
+            Conversation.scope_type == data.scope_type,
+        ))
+        if conversation is None:
+            raise HTTPException(404, 'Conversation not found')
+    if data.scope_type == 'folder' and db.scalar(select(Document.id).where(
+        Document.knowledge_base_id == knowledge_base_id,
+        Document.status == 'ready',
+    ).limit(1)) is None:
+        raise HTTPException(400, 'This folder has no ready documents yet. Upload a PDF or TXT file and wait until it is ready before chatting.')
+    return knowledge_base_id, document_id, conversation
+
+def _load_follow_up_context(user_id, data: ChatRequest):
+    """Validate the requested scope and load recent turns before query rewriting."""
+    with sessionmaker(bind=get_engine())() as db:
+        _, _, conversation = _resolve_scope(db, user_id, data)
+        if conversation is None:
+            return []
+        recent = db.scalars(
+            select(Message)
+            .where(Message.conversation_id == conversation.id)
+            .order_by(Message.message_index.desc(), Message.created_at.desc())
+            .limit(8)
+        ).all()
+        return [{'role': item.role, 'content': item.content} for item in reversed(recent)]
+
+def _prepare_chat(user_id, data: ChatRequest, search_query, query_vector):
     """Run chat authorization and retrieval in one worker-owned DB session."""
     with sessionmaker(bind=get_engine())() as db:
-        owned_kb(db, user_id, data.knowledge_base_id)
-        if data.document_id:
-            owned_document(db, user_id, data.knowledge_base_id, data.document_id)
-        conversation = None
-        if data.conversation_id:
-            conversation = db.scalar(select(Conversation).where(
-                Conversation.id == data.conversation_id,
-                Conversation.user_id == user_id,
-                Conversation.knowledge_base_id == data.knowledge_base_id,
-                Conversation.document_id == data.document_id,
-            ))
-            if conversation is None:
-                raise HTTPException(404, 'Conversation not found')
-        hits = retrieve(db, data.knowledge_base_id, data.question, query_vector=query_vector, document_id=data.document_id)
+        knowledge_base_id, document_id, conversation = _resolve_scope(db, user_id, data)
+        hits, retrieval_details = retrieve(db, knowledge_base_id, search_query, query_vector=query_vector, document_id=document_id, limit=5)
         has_processing_documents = db.scalar(select(Document.id).where(
-            Document.knowledge_base_id == data.knowledge_base_id,
+            Document.knowledge_base_id == knowledge_base_id,
             Document.status.in_(['pending', 'processing']),
         ).limit(1)) is not None
         sources = [Source(document_id=doc_id, filename=name, page_number=chunk.page_number, excerpt=chunk.content[:300]) for chunk, name, doc_id in hits]
         context = '\n\n'.join((f'[{i}] {name}, page {chunk.page_number}: {chunk.content}' for i, (chunk, name, _) in enumerate(hits, 1)))
-        return conversation.id if conversation else None, sources, context, bool(hits), has_processing_documents
+        return conversation.id if conversation else None, knowledge_base_id, document_id, sources, context, bool(hits), has_processing_documents, retrieval_details
 
-def _save_chat(user_id, knowledge_base_id, document_id, conversation_id, question, answer, sources):
+def _save_chat(user_id, knowledge_base_id, document_id, scope_type, conversation_id, question, search_query, answer, sources):
     """Persist the completed exchange in a session owned by this worker."""
     with sessionmaker(bind=get_engine())() as db:
         if conversation_id:
@@ -62,6 +94,7 @@ def _save_chat(user_id, knowledge_base_id, document_id, conversation_id, questio
                 Conversation.user_id == user_id,
                 Conversation.knowledge_base_id == knowledge_base_id,
                 Conversation.document_id == document_id,
+                Conversation.scope_type == scope_type,
             ).with_for_update())
             if conversation is None:
                 raise HTTPException(404, 'Conversation not found')
@@ -70,6 +103,7 @@ def _save_chat(user_id, knowledge_base_id, document_id, conversation_id, questio
                 user_id=user_id,
                 knowledge_base_id=knowledge_base_id,
                 document_id=document_id,
+                scope_type=scope_type,
                 title=question[:100],
                 is_archived=False,
             )
@@ -85,6 +119,7 @@ def _save_chat(user_id, knowledge_base_id, document_id, conversation_id, questio
             message_index=next_message_index,
             role='user',
             content=question,
+            metadata_json=json.dumps({'search_query': search_query}),
         ))
         db.add(Message(
             conversation_id=conversation.id,
@@ -100,16 +135,22 @@ def _save_chat(user_id, knowledge_base_id, document_id, conversation_id, questio
 async def chat(data: ChatRequest, user: User=Depends(subscribed_user)):
     started = perf_counter()
     try:
-        if data.document_id is None:
-            raise HTTPException(400, 'Choose a document before starting a chat.')
         stage_started = perf_counter()
-        query_vector = (await run_in_threadpool(embed_texts, [data.question]))[0]
+        recent_messages = await run_in_threadpool(_load_follow_up_context, user.id, data)
+        search_query = await rewrite_follow_up_question(data.question, recent_messages)
+        logger.warning('Follow-up query preparation completed in %.1f seconds (%s prior message(s)).', perf_counter() - stage_started, len(recent_messages))
+        stage_started = perf_counter()
+        query_vector = (await run_in_threadpool(embed_texts, [search_query]))[0]
         logger.warning('Chat query embedding completed in %.1f seconds.', perf_counter() - stage_started)
         stage_started = perf_counter()
-        conversation_id, sources, context, has_hits, has_processing_documents = await run_in_threadpool(
-            _prepare_chat, user.id, data, query_vector
+        conversation_id, knowledge_base_id, document_id, sources, context, has_hits, has_processing_documents, retrieval_details = await run_in_threadpool(
+            _prepare_chat, user.id, data, search_query, query_vector
         )
-        logger.warning('Chat retrieval completed in %.1f seconds (%s source(s)).', perf_counter() - stage_started, len(sources))
+        logger.warning(
+            'Chat retrieval completed in %.1f seconds (%s source(s)); path=%s, top-five contributions vector=%s keyword=%s.',
+            perf_counter() - stage_started, len(sources), retrieval_details['path'],
+            retrieval_details['vector_top_five'], retrieval_details['keyword_top_five'],
+        )
         stage_started = perf_counter()
         if has_hits:
             answer = await answer_question(data.question, context)
@@ -120,13 +161,13 @@ async def chat(data: ChatRequest, user: User=Depends(subscribed_user)):
         logger.warning('Chat answer generation completed in %.1f seconds.', perf_counter() - stage_started)
         stage_started = perf_counter()
         saved_conversation_id = await run_in_threadpool(
-            _save_chat, user.id, data.knowledge_base_id, data.document_id, conversation_id,
-            data.question, answer, sources,
+            _save_chat, user.id, knowledge_base_id, document_id, data.scope_type, conversation_id,
+            data.question, search_query, answer, sources,
         )
         logger.warning('Chat persistence completed in %.1f seconds; total %.1f seconds.', perf_counter() - stage_started, perf_counter() - started)
         return ChatResponse(answer=answer, conversation_id=saved_conversation_id, sources=sources)
     except Exception:
-        logger.exception('Chat request failed for user %s and knowledge base %s after %.1f seconds.', user.id, data.knowledge_base_id, perf_counter() - started)
+        logger.exception('Chat request failed for user %s and scope %s after %.1f seconds.', user.id, data.scope_id, perf_counter() - started)
         raise
 
 @router.get('/conversations', response_model=list[ConversationResponse])
@@ -169,11 +210,16 @@ def messages(conversation_id: UUID, user: User=Depends(current_user), db: Sessio
             sources = json.loads(message.sources_json) if message.sources_json else []
         except (TypeError, json.JSONDecodeError):
             sources = []
+        try:
+            metadata = json.loads(message.metadata_json) if message.metadata_json else {}
+        except (TypeError, json.JSONDecodeError):
+            metadata = {}
         response.append(MessageResponse(
             id=message.id,
             role=message.role,
             content=message.content,
             created_at=message.created_at,
             sources=sources,
+            metadata=metadata if isinstance(metadata, dict) else {},
         ))
     return response

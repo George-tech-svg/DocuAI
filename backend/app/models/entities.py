@@ -85,6 +85,7 @@ class Conversation(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
     knowledge_base_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('knowledge_bases.id', ondelete='SET NULL'), nullable=True)
     document_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('documents.id', ondelete='SET NULL'), nullable=True, index=True)
+    scope_type: Mapped[str] = mapped_column(String(20), default='document', server_default='document')
     title: Mapped[str] = mapped_column(String(255), default='New chat')
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
@@ -106,6 +107,7 @@ class Message(Base):
     # Retain the position column required by the existing Neon schema.
     message_index: Mapped[int] = mapped_column(Integer, default=0, server_default='0')
     sources_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
@@ -151,3 +153,30 @@ class MpesaPayment(Base):
     result_description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+class PaymentRecoveryRequest(Base):
+    __tablename__ = 'payment_recovery_requests'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uid)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    phone_number: Mapped[str] = mapped_column(String(20))
+    paid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    mpesa_message: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default='pending', index=True)
+    matched_payment_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('mpesa_payments.id', ondelete='SET NULL'), nullable=True)
+    granted_subscription_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('subscriptions.id', ondelete='SET NULL'), nullable=True)
+    reviewed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    admin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+class AdminAuditLog(Base):
+    __tablename__ = 'admin_audit_logs'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uid)
+    admin_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'), nullable=True, index=True)
+    payment_recovery_request_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('payment_recovery_requests.id', ondelete='SET NULL'), nullable=True, index=True)
+    action: Mapped[str] = mapped_column(String(40))
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    details: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)

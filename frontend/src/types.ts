@@ -41,6 +41,7 @@ export interface ConversationRecord {
   title: string;
   knowledge_base_id: string | null;
   document_id: string | null;
+  scope_type: "document" | "folder";
   created_at: string;
   is_archived: boolean;
   is_pinned: boolean;
@@ -49,6 +50,7 @@ export interface ConversationRecord {
 export interface SavedChatMessage extends ChatMessage {
   id: string;
   created_at: string;
+  metadata?: { search_query?: string };
 }
 
 export interface AuthenticationResponse {

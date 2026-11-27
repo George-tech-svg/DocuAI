@@ -1,1 +1,4 @@
-from app.models.entities import User, KnowledgeBase, Document, DocumentChunk, Conversation, Message
+from app.models.entities import (
+    AdminAuditLog, Conversation, Document, DocumentChunk, KnowledgeBase, Message,
+    MpesaPayment, PaymentRecoveryRequest, Subscription, SubscriptionPlan, User,
+)

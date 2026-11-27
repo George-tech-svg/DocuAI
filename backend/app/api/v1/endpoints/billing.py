@@ -1,6 +1,7 @@
 """Member plan listings, monthly M-Pesa checkout, and payment callbacks."""
 from datetime import datetime, timedelta, timezone
 import secrets
+from zoneinfo import ZoneInfo
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
@@ -8,8 +9,8 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import current_user
 from app.core.config import get_settings
 from app.db.session import get_db
-from app.models.entities import MpesaPayment, Subscription, SubscriptionPlan, User
-from app.schemas.billing import BillingStatus, CheckoutRequest, CheckoutResponse, PaymentView, PlanResponse, SubscriptionView
+from app.models.entities import MpesaPayment, PaymentRecoveryRequest, Subscription, SubscriptionPlan, User
+from app.schemas.billing import BillingStatus, CheckoutRequest, CheckoutResponse, PaymentRecoveryCreate, PaymentRecoveryView, PaymentView, PlanResponse, SubscriptionView
 from app.services.mpesa import initiate_stk_push, mpesa_ready, normalize_phone
 
 router = APIRouter(tags=['Billing'])
@@ -51,6 +52,46 @@ def my_billing(user: User=Depends(current_user), db: Session=Depends(get_db)):
         payments=[PaymentView.model_validate(payment) for payment in payments],
         mpesa_ready=mpesa_ready(),
     )
+
+@router.get('/billing/payment-recovery', response_model=list[PaymentRecoveryView])
+def my_payment_recovery_requests(user: User=Depends(current_user), db: Session=Depends(get_db)):
+    return list(db.scalars(
+        select(PaymentRecoveryRequest)
+        .where(PaymentRecoveryRequest.user_id == user.id)
+        .order_by(PaymentRecoveryRequest.created_at.desc())
+        .limit(20)
+    ).all())
+
+@router.post('/billing/payment-recovery', response_model=PaymentRecoveryView, status_code=201)
+def create_payment_recovery_request(data: PaymentRecoveryCreate, user: User=Depends(current_user), db: Session=Depends(get_db)):
+    # Lock the member row to prevent two simultaneous requests both passing the pending check.
+    db.scalar(select(User).where(User.id == user.id).with_for_update())
+    pending = db.scalar(select(PaymentRecoveryRequest.id).where(
+        PaymentRecoveryRequest.user_id == user.id,
+        PaymentRecoveryRequest.status == 'pending',
+    ).limit(1))
+    if pending:
+        raise HTTPException(409, 'You already have a payment recovery request waiting for review.')
+    paid_at = data.paid_at
+    if paid_at.tzinfo is None:
+        paid_at = paid_at.replace(tzinfo=ZoneInfo('Africa/Nairobi'))
+    paid_at = paid_at.astimezone(timezone.utc)
+    if paid_at > datetime.now(timezone.utc) + timedelta(minutes=5):
+        raise HTTPException(422, 'Payment time cannot be in the future.')
+    payment_message = data.mpesa_message.strip()
+    if len(payment_message) < 5:
+        raise HTTPException(422, 'Paste the M-Pesa confirmation message or receipt so the administrator can review it.')
+    request_record = PaymentRecoveryRequest(
+        user_id=user.id,
+        phone_number=normalize_phone(data.phone_number),
+        paid_at=paid_at,
+        mpesa_message=payment_message,
+        status='pending',
+    )
+    db.add(request_record)
+    db.commit()
+    db.refresh(request_record)
+    return request_record
 
 @router.post('/billing/checkout', response_model=CheckoutResponse, status_code=202)
 async def checkout(data: CheckoutRequest, user: User=Depends(current_user), db: Session=Depends(get_db)):

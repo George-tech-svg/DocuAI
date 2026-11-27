@@ -31,6 +31,67 @@ class CheckoutRequest(BaseModel):
     plan_id: UUID
     phone_number: str = Field(min_length=9, max_length=16)
 
+class PaymentRecoveryCreate(BaseModel):
+    phone_number: str = Field(min_length=9, max_length=16)
+    paid_at: datetime
+    mpesa_message: str = Field(min_length=5, max_length=2000)
+
+class PaymentRecoveryView(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    phone_number: str
+    paid_at: datetime
+    mpesa_message: str
+    status: str
+    rejection_reason: str | None
+    created_at: datetime
+    reviewed_at: datetime | None
+
+class RecoveryMatch(BaseModel):
+    payment_id: UUID
+    plan_id: UUID
+    member_name: str
+    member_email: str
+    plan_name: str
+    amount_kes: int
+    phone_number: str
+    status: str
+    mpesa_receipt: str | None
+    created_at: datetime
+    match_reason: str
+
+class AdminPaymentRecoveryView(PaymentRecoveryView):
+    user_id: UUID
+    member_name: str
+    member_email: str
+    matched_payment_id: UUID | None
+    granted_subscription_id: UUID | None
+    reviewed_by_user_id: UUID | None
+    admin_note: str | None
+    matches: list[RecoveryMatch]
+
+class PaymentRecoveryReview(BaseModel):
+    action: str = Field(pattern="^(grant|reject)$")
+    plan_id: UUID | None = None
+    matched_payment_id: UUID | None = None
+    reason: str | None = Field(default=None, max_length=1000)
+
+class PaymentRecoveryReviewResult(BaseModel):
+    id: UUID
+    status: str
+    granted_subscription_id: UUID | None
+    reviewed_at: datetime
+
+class AdminAuditEntry(BaseModel):
+    id: UUID
+    admin_user_id: UUID | None
+    admin_email: str | None
+    payment_recovery_request_id: UUID | None
+    action: str
+    reason: str | None
+    details: str | None
+    created_at: datetime
+
 class CheckoutResponse(BaseModel):
     payment_id: UUID
     subscription_id: UUID

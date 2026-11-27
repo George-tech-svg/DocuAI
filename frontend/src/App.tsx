@@ -32,7 +32,7 @@ const AdminDashboard = lazy(() => import("./AdminDashboard"));
 const BillingPage = lazy(() => import("./BillingPage"));
 const TermsPrivacy = lazy(() => import("./TermsPrivacy"));
 const GoogleSignIn = lazy(() => import("./GoogleSignIn"));
-import { downloadAnswerPdf, downloadConversationPdf } from "./pdfExport";
+import { downloadAnswerPdf, downloadConversationPdf, downloadConversationsPdf } from "./pdfExport";
 import type {
   AuthenticationResponse,
   ChatMessage,
@@ -48,6 +48,48 @@ import type {
 } from "./types";
 
 type ItemAction = { label: string; icon: ReactNode; onClick: () => void; danger?: boolean };
+type DeleteTarget =
+  | { kind: "document"; knowledgeBaseId: string; document: DocumentRecord }
+  | { kind: "folder"; knowledgeBase: KnowledgeBase };
+type DeleteDialogState = {
+  target: DeleteTarget;
+  conversations: ConversationRecord[] | null;
+  documentCount: number | null;
+  loading: boolean;
+  deleting: boolean;
+  error: string;
+};
+
+function friendlyProcessingError(reason: string | null): string {
+  const normalized = (reason ?? "").toLowerCase();
+  if (normalized.includes("no extractable text") || normalized.includes("scanned pdf") || normalized.includes("ocr")) {
+    return "This PDF has no selectable text. Scanned or image-only PDFs are not supported. Try a text-based PDF or TXT file.";
+  }
+  if (normalized.includes("too large") || normalized.includes("maximum") || normalized.includes("characters")) {
+    return "This file is too large to process. Choose a PDF or TXT file under 10 MB with less text.";
+  }
+  if (normalized.includes("cloudinary") || normalized.includes("storage is not configured")) {
+    return "The file could not be saved. Document storage may need attention. Please try again later or contact support.";
+  }
+  if (normalized.includes("invalid pdf") || normalized.includes("pdf header") || normalized.includes("damaged")) {
+    return "This PDF could not be opened. It may be damaged or password-protected. Try another text-based PDF or TXT file.";
+  }
+  return "We could not read or process this file. It may be damaged, protected, or contain no selectable text. Try another text-based PDF or TXT file.";
+}
+
+function friendlyUploadError(error: unknown): string {
+  const message = getErrorMessage(error);
+  if (/\b413\b/.test(message)) {
+    return "The upload service could not accept this file because it is too large. Choose a smaller PDF or TXT file under 10 MB.";
+  }
+  if (/network error/i.test(message)) {
+    return "Network error. Please check your connection and try again.";
+  }
+  if (/\b5\d\d\b|something went wrong on our end/i.test(message)) {
+    return "Something went wrong while uploading this file. Please try again later.";
+  }
+  return message || "The upload could not be completed. Please try again.";
+}
 
 function ItemActionMenu({ label, open, onToggle, onClose, items }: {
   label: string;
@@ -180,6 +222,7 @@ export default function App() {
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [chatScope, setChatScope] = useState<"document" | "folder">("folder");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const questionInputRef = useRef<HTMLInputElement>(null);
 
@@ -188,6 +231,10 @@ export default function App() {
   const [busyMessage, setBusyMessage] = useState("Processing...");
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [uploadError, setUploadError] = useState("");
+  const [uploadSuccess, setUploadSuccess] = useState("");
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+  const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState | null>(null);
 
   useEffect(() => { localStorage.setItem("documind_sidebar_width", String(sidebarWidth)); }, [sidebarWidth]);
 
@@ -238,6 +285,11 @@ export default function App() {
       return;
     }
 
+    setDocuments([]);
+    setFolderDocuments((previous) => ({
+      ...previous,
+      [selectedKnowledgeBaseId]: { items: previous[selectedKnowledgeBaseId]?.items ?? [], loading: true, error: "" },
+    }));
     try {
       const response = await request<DocumentListResponse>(
         `/knowledge-bases/${selectedKnowledgeBaseId}/documents`,
@@ -249,6 +301,10 @@ export default function App() {
         [selectedKnowledgeBaseId]: { items: response.items, loading: false, error: "" },
       }));
     } catch (error) {
+      setFolderDocuments((previous) => ({
+        ...previous,
+        [selectedKnowledgeBaseId]: { items: previous[selectedKnowledgeBaseId]?.items ?? [], loading: false, error: getErrorMessage(error) },
+      }));
       setErrorMessage(getErrorMessage(error));
     }
   }
@@ -350,6 +406,15 @@ export default function App() {
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [isMobileSidebarOpen, isHelpPanelOpen]);
+
+  useEffect(() => {
+    if (!deleteDialog || deleteDialog.deleting) return;
+    function cancelOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setDeleteDialog(null);
+    }
+    window.addEventListener("keydown", cancelOnEscape);
+    return () => window.removeEventListener("keydown", cancelOnEscape);
+  }, [deleteDialog]);
 
   /** Register a new user or sign in an existing user. */
   async function handleAuthentication(event: FormEvent<HTMLFormElement>) {
@@ -516,6 +581,7 @@ export default function App() {
       setSelectedKnowledgeBaseId(conversation.knowledge_base_id);
     }
     setSelectedDocumentId(conversation.document_id ?? "");
+    setChatScope(conversation.scope_type ?? (conversation.document_id ? "document" : "folder"));
     if (conversation.document_id && conversation.knowledge_base_id) {
       setExpandedKnowledgeBaseIds((previous) => new Set(previous).add(conversation.knowledge_base_id!));
       setExpandedDocumentIds((previous) => new Set(previous).add(conversation.document_id!));
@@ -565,20 +631,27 @@ export default function App() {
   }
 
   function handleSelectKnowledgeBase(knowledgeBaseId: string) {
-    if (knowledgeBaseId !== selectedKnowledgeBaseId || selectedDocumentId) {
+    if (knowledgeBaseId !== selectedKnowledgeBaseId || selectedDocumentId || chatScope !== "folder") {
       clearCurrentConversation();
     }
     setSelectedKnowledgeBaseId(knowledgeBaseId);
     setSelectedDocumentId("");
+    setChatScope("folder");
     setIsMobileSidebarOpen(false);
   }
 
   function handleSelectDocument(knowledgeBaseId: string, documentId: string) {
-    if (knowledgeBaseId !== selectedKnowledgeBaseId || documentId !== selectedDocumentId) {
+    if (chatScope === "folder" && selectedKnowledgeBaseId) {
+      const folderName = knowledgeBases.find((folder) => folder.id === selectedKnowledgeBaseId)?.name ?? "this folder";
+      const confirmed = window.confirm(`Switch to This document? Your current chat across ${folderName} will remain saved in the folder's chat history.`);
+      if (!confirmed) return;
+    }
+    if (knowledgeBaseId !== selectedKnowledgeBaseId || documentId !== selectedDocumentId || chatScope !== "document") {
       clearCurrentConversation();
     }
     setSelectedKnowledgeBaseId(knowledgeBaseId);
     setSelectedDocumentId(documentId);
+    setChatScope("document");
     setExpandedKnowledgeBaseIds((previous) => new Set(previous).add(knowledgeBaseId));
     setExpandedDocumentIds((previous) => new Set(previous).add(documentId));
     setIsMobileSidebarOpen(false);
@@ -632,7 +705,8 @@ export default function App() {
 
     setIsBusy(true);
     setBusyMessage(`Preparing ${files.length} file${files.length === 1 ? "" : "s"}...`);
-    setErrorMessage("");
+    setUploadError("");
+    setUploadSuccess("");
 
     let uploaded = 0;
     const failures: string[] = [];
@@ -640,11 +714,11 @@ export default function App() {
       for (const [index, file] of files.entries()) {
         setBusyMessage(`Uploading file ${index + 1} of ${files.length}: ${file.name}`);
         if (!/\.(pdf|txt)$/i.test(file.name)) {
-          failures.push("Invalid file type. Please upload a PDF or TXT file.");
+          failures.push(`${file.name}: Invalid file type. Please choose a PDF or TXT file.`);
           continue;
         }
         if (file.size > 10_000_000) {
-          failures.push("File is too large. Maximum size is 10MB.");
+          failures.push(`${file.name}: This file is too large. The maximum size is 10 MB.`);
           continue;
         }
         const formData = new FormData();
@@ -659,41 +733,129 @@ export default function App() {
           if (response.document.status === "ready" || response.document.status === "pending" || response.document.status === "processing") {
             uploaded += 1;
           } else {
-            failures.push("Failed to process the file. Please try again.");
+            failures.push(`${file.name}: ${friendlyProcessingError(response.document.processing_error)}`);
           }
         } catch (error) {
-          failures.push(getErrorMessage(error));
+          failures.push(`${file.name}: ${friendlyUploadError(error)}`);
         }
       }
       await refreshDocuments();
       if (failures.length) {
         const shownFailures = failures.slice(0, 3).join("; ");
         const remaining = failures.length > 3 ? `; and ${failures.length - 3} more` : "";
-        setErrorMessage(uploaded ? `${uploaded} of ${files.length} files uploaded. ${shownFailures}${remaining}` : shownFailures);
+        setUploadError(uploaded ? `${uploaded} of ${files.length} files uploaded. ${shownFailures}${remaining}` : `${shownFailures}${remaining}`);
+      } else if (uploaded) {
+        setUploadSuccess(`${uploaded} file${uploaded === 1 ? "" : "s"} ${uploaded === 1 ? "was" : "were"} uploaded. Files may take a little time to finish processing.`);
       }
+    } catch (error) {
+      setUploadError(friendlyUploadError(error));
     } finally {
       setIsBusy(false);
       event.target.value = "";
     }
   }
 
-  /** Delete one document after the user confirms the action. */
-  async function handleDeleteDocument(knowledgeBaseId: string, documentId: string) {
-    if (!window.confirm("Delete this file and its saved chats? This cannot be undone.")) return;
+  function deleteTargetKey(target: DeleteTarget) {
+    return target.kind === "document" ? `document:${target.document.id}` : `folder:${target.knowledgeBase.id}`;
+  }
 
+  /** Fetch the current history before showing any destructive action. */
+  async function openDeleteConfirmation(target: DeleteTarget, retry = false) {
+    if (deleteDialog && !retry) return;
+    if (isBusy) {
+      const message = "Please wait for the current action to finish before deleting a file or folder.";
+      if (isUploadPanelOpen) setUploadError(message);
+      else setErrorMessage(message);
+      return;
+    }
+    const targetKey = deleteTargetKey(target);
+    setDeleteDialog({ target, conversations: null, documentCount: null, loading: true, deleting: false, error: "" });
     try {
-      await request<void>(
-        `/knowledge-bases/${knowledgeBaseId}/documents/${documentId}`,
-        token,
-        { method: "DELETE" }
-      );
-      if (selectedDocumentId === documentId) { setSelectedDocumentId(""); setConversationId(null); setMessages([]); }
-      await refreshDocuments();
-      await refreshConversationHistory();
-      const refreshed = await request<DocumentListResponse>(`/knowledge-bases/${knowledgeBaseId}/documents`, token);
-      setFolderDocuments((previous) => ({ ...previous, [knowledgeBaseId]: { items: refreshed.items, loading: false, error: "" } }));
+      const savedConversations = await request<ConversationRecord[]>("/conversations", token);
+      let conversations: ConversationRecord[];
+      let documentCount: number | null = null;
+      if (target.kind === "document") {
+        conversations = savedConversations.filter((conversation) => conversation.document_id === target.document.id);
+      } else {
+        const listing = await request<DocumentListResponse>(`/knowledge-bases/${target.knowledgeBase.id}/documents`, token);
+        conversations = savedConversations.filter((conversation) => conversation.knowledge_base_id === target.knowledgeBase.id);
+        documentCount = listing.total;
+      }
+      setDeleteDialog((current) => current && deleteTargetKey(current.target) === targetKey
+        ? { ...current, conversations, documentCount, loading: false }
+        : current);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      setDeleteDialog((current) => current && deleteTargetKey(current.target) === targetKey
+        ? { ...current, loading: false, error: getErrorMessage(error) }
+        : current);
+    }
+  }
+
+  function handleDeleteDocument(knowledgeBaseId: string, document: DocumentRecord) {
+    void openDeleteConfirmation({ kind: "document", knowledgeBaseId, document });
+  }
+
+  async function confirmDeleteWithHistory(downloadHistory: boolean) {
+    const pending = deleteDialog;
+    if (!pending || pending.loading || pending.deleting || pending.error || !pending.conversations) return;
+    const targetKey = deleteTargetKey(pending.target);
+    setDeleteDialog({ ...pending, deleting: true, error: "" });
+    let historyDownloaded = false;
+    try {
+      if (downloadHistory && pending.conversations.length) {
+        const conversationsWithMessages = await Promise.all(pending.conversations.map(async (conversation) => ({
+          title: conversation.title || "Saved conversation",
+          messages: await request<SavedChatMessage[]>(`/conversations/${conversation.id}/messages`, token),
+        })));
+        const title = pending.target.kind === "document"
+          ? pending.target.document.original_filename
+          : pending.target.knowledgeBase.name;
+        await downloadConversationsPdf(title, conversationsWithMessages);
+        historyDownloaded = true;
+      }
+
+      if (pending.target.kind === "document") {
+        await request<void>(
+          `/knowledge-bases/${pending.target.knowledgeBaseId}/documents/${pending.target.document.id}`,
+          token,
+          { method: "DELETE" },
+        );
+      } else {
+        await request<void>(`/knowledge-bases/${pending.target.knowledgeBase.id}`, token, { method: "DELETE" });
+      }
+
+      setDeleteDialog(null);
+      if (pending.target.kind === "document") {
+        if (selectedDocumentId === pending.target.document.id) {
+          setSelectedDocumentId(""); setConversationId(null); setMessages([]);
+        }
+        void refreshDocuments();
+        void refreshConversationHistory();
+        try {
+          const refreshed = await request<DocumentListResponse>(`/knowledge-bases/${pending.target.knowledgeBaseId}/documents`, token);
+          setFolderDocuments((previous) => ({ ...previous, [pending.target.knowledgeBaseId]: { items: refreshed.items, loading: false, error: "" } }));
+        } catch (error) {
+          setErrorMessage(getErrorMessage(error));
+        }
+      } else {
+        const folderId = pending.target.knowledgeBase.id;
+        if (selectedKnowledgeBaseId === folderId) {
+          setSelectedKnowledgeBaseId(""); setSelectedDocumentId(""); setConversationId(null); setMessages([]);
+        }
+        setFolderDocuments((previous) => {
+          const next = { ...previous };
+          delete next[folderId];
+          return next;
+        });
+        void Promise.all([refreshKnowledgeBases(), refreshConversationHistory()]);
+      }
+    } catch (error) {
+      const message = historyDownloaded
+        ? `The PDF was downloaded, but the item could not be deleted. Your files and chats are still saved. ${getErrorMessage(error)}`
+        : getErrorMessage(error);
+      setDeleteDialog((current) => current && deleteTargetKey(current.target) === targetKey
+        ? { ...current, deleting: false, error: message }
+        : current);
     }
   }
 
@@ -720,14 +882,7 @@ export default function App() {
   }
 
   async function handleDeleteKnowledgeBase(knowledgeBase: KnowledgeBase) {
-    if (!window.confirm(`Delete folder “${knowledgeBase.name}” and all its files and chats? This cannot be undone.`)) return;
-    try {
-      await request<void>(`/knowledge-bases/${knowledgeBase.id}`, token, { method: "DELETE" });
-      if (selectedKnowledgeBaseId === knowledgeBase.id) {
-        setSelectedKnowledgeBaseId(""); setSelectedDocumentId(""); setConversationId(null); setMessages([]);
-      }
-      await Promise.all([refreshKnowledgeBases(), refreshConversationHistory()]);
-    } catch (error) { setErrorMessage(getErrorMessage(error)); }
+    void openDeleteConfirmation({ kind: "folder", knowledgeBase });
   }
 
   function promptRename(label: string, currentName: string, save: (name: string) => void) {
@@ -738,7 +893,16 @@ export default function App() {
   /** Send a question and display the AI answer with its document sources. */
   async function handleSendQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedDocumentId) {
+    const readyFolderDocuments = documents.filter((document) => document.status === "ready");
+    if (chatScope === "folder" && !selectedKnowledgeBaseId) {
+      setErrorMessage("Please select a folder before starting a chat.");
+      return;
+    }
+    if (chatScope === "folder" && readyFolderDocuments.length === 0) {
+      setErrorMessage("This folder has no ready documents yet. Upload a PDF or TXT file and wait until it is ready before chatting.");
+      return;
+    }
+    if (chatScope === "document" && !selectedDocumentId) {
       if (!question.trim() || isBusy) return;
       const firstName = userProfile?.full_name.trim().split(/\s+/)[0] || "there";
       const whereToFindFiles = window.matchMedia("(max-width: 700px)").matches
@@ -768,8 +932,8 @@ export default function App() {
       const response = await request<ChatResponse>("/chat", token, {
         method: "POST",
         body: JSON.stringify({
-          knowledge_base_id: selectedKnowledgeBaseId,
-          document_id: selectedDocumentId,
+          scope_type: chatScope,
+          scope_id: chatScope === "document" ? selectedDocumentId : selectedKnowledgeBaseId,
           question: submittedQuestion,
           conversation_id: conversationId,
         }),
@@ -948,6 +1112,11 @@ export default function App() {
     (knowledgeBase) => knowledgeBase.id === selectedKnowledgeBaseId
   );
   const selectedDocument = documents.find((document) => document.id === selectedDocumentId);
+  const readyFolderDocuments = documents.filter((document) => document.status === "ready");
+  const selectedFolderDocumentsLoading = !!selectedKnowledgeBaseId && !!folderDocuments[selectedKnowledgeBaseId]?.loading;
+  const hasValidChatScope = chatScope === "folder"
+    ? !!selectedKnowledgeBaseId && readyFolderDocuments.length > 0
+    : !!selectedDocumentId && selectedDocument?.status === "ready";
   const examplePrompts = [
     { label: "Prepare a teaching pack", prompt: "Using only the selected document, prepare a practical teacher-ready lesson pack. Include: topic and learning objectives (mark anything the source does not specify as 'Teacher to fill in'), a brief lesson sequence, a clear explanation with examples, one activity requiring few or no special materials, practice at support/standard/challenge levels, a short formative quiz with answer key, and likely misconceptions with follow-up suggestions. Cite source numbers like [1] beside claims. Keep it clear, printable, and easy to adapt. Do not invent curriculum requirements." },
     { label: "Make a teaching summary", prompt: "Create a clear teaching summary of this document: main ideas, learning objectives only where stated, key terms, worked examples, and a short recap. Use plain language and cite source numbers like [1]." },
@@ -1012,6 +1181,7 @@ export default function App() {
           {knowledgeBases.map((knowledgeBase) => {
             const isExpanded = expandedKnowledgeBaseIds.has(knowledgeBase.id);
             const folder = folderDocuments[knowledgeBase.id];
+            const folderChats = conversationHistory.filter((conversation) => conversation.knowledge_base_id === knowledgeBase.id && conversation.scope_type === "folder");
             return (
               <div className="folder-tree-item" key={knowledgeBase.id}>
                 <div className="folder-tree-row">
@@ -1051,6 +1221,19 @@ export default function App() {
                   <div className="folder-file-tree" aria-label={`Files in ${knowledgeBase.name}`}>
                     {folder?.loading && <small className="folder-tree-note">Loading files…</small>}
                     {folder?.error && <small className="folder-tree-note error">{folder.error}</small>}
+                    {folderChats.length > 0 && <div className="folder-scope-history" aria-label={`Folder-wide chats for ${knowledgeBase.name}`}>
+                      <small className="history-empty">Folder chats</small>
+                      {folderChats.map((conversation) => <div className={`history-row ${conversationId === conversation.id ? "selected" : ""} ${conversation.is_archived ? "archived" : ""}`} key={conversation.id}>
+                        <button className="history-open" type="button" title={conversation.title} disabled={isBusy} onClick={() => void handleOpenConversation(conversation)}><MessageCircle size={13} /><span>{conversation.title || "New folder chat"}</span>{conversation.is_pinned && <Pin size={12} aria-label="Pinned" />}</button>
+                        <ItemActionMenu label={conversation.title} open={openItemMenuId === `chat-${conversation.id}`} onToggle={() => setOpenItemMenuId((current) => current === `chat-${conversation.id}` ? null : `chat-${conversation.id}`)} onClose={() => setOpenItemMenuId(null)} items={[
+                          { label: conversation.is_pinned ? "Unpin" : "Pin", icon: <Pin size={15} />, onClick: () => void updateItem(`/conversations/${conversation.id}`, { is_pinned: !conversation.is_pinned }) },
+                          { label: "Rename", icon: <Pencil size={15} />, onClick: () => promptRename("chat", conversation.title, (title) => void updateItem(`/conversations/${conversation.id}`, { title })) },
+                          { label: conversation.is_archived ? "Restore" : "Archive", icon: <Archive size={15} />, onClick: () => void updateItem(`/conversations/${conversation.id}`, { is_archived: !conversation.is_archived }) },
+                          { label: "Download", icon: <Download size={15} />, onClick: () => void handleDownloadConversation(conversation) },
+                          { label: "Delete", icon: <Trash2 size={15} />, danger: true, onClick: () => void handleDeleteConversation(conversation) },
+                        ]} />
+                      </div>)}
+                    </div>}
                     {!folder?.loading && !folder?.error && folder?.items.map((document) => {
                       const isDocumentExpanded = expandedDocumentIds.has(document.id);
                       const documentChats = conversationHistory.filter((conversation) => conversation.document_id === document.id);
@@ -1091,10 +1274,18 @@ export default function App() {
                                 { label: document.is_pinned ? "Unpin" : "Pin", icon: <Pin size={15} />, onClick: () => void updateItem(`/knowledge-bases/${knowledgeBase.id}/documents/${document.id}`, { is_pinned: !document.is_pinned }) },
                                 { label: "Rename", icon: <Pencil size={15} />, onClick: () => promptRename("file", document.original_filename, (original_filename) => void updateItem(`/knowledge-bases/${knowledgeBase.id}/documents/${document.id}`, { original_filename })) },
                                 { label: document.is_archived ? "Restore" : "Archive", icon: <Archive size={15} />, onClick: () => void updateItem(`/knowledge-bases/${knowledgeBase.id}/documents/${document.id}`, { is_archived: !document.is_archived }) },
-                                { label: "Delete", icon: <Trash2 size={15} />, danger: true, onClick: () => void handleDeleteDocument(knowledgeBase.id, document.id) },
+                                { label: "Delete", icon: <Trash2 size={15} />, danger: true, onClick: () => handleDeleteDocument(knowledgeBase.id, document) },
                               ]}
                             />
                           </div>
+                          {document.status === "failed" && (
+                            <div className="folder-document-failure" role="alert">
+                              <small>{friendlyProcessingError(document.processing_error)}</small>
+                              <button type="button" onClick={() => handleDeleteDocument(knowledgeBase.id, document)}>
+                                Delete and try another file
+                              </button>
+                            </div>
+                          )}
                           {isDocumentExpanded && (
                             <div className="document-chat-list" aria-label={`Chats about ${document.original_filename}`}>
                               {isHistoryLoading && <small className="history-empty">Loading chats…</small>}
@@ -1195,14 +1386,14 @@ export default function App() {
         <section className="chat">
           <div className="chat-heading">
             <div>
-              <h2>{selectedDocument?.original_filename ?? selectedKnowledgeBase?.name ?? "Your workspace"}</h2>
-              <p>{selectedDocumentId
-                ? "Questions and saved chats are tied to this file. Expand it in the sidebar to reopen a chat."
-              : "Please select a file to use the chatbot."}</p>
+              <h2>{chatScope === "folder" ? selectedKnowledgeBase?.name ?? "Your workspace" : selectedDocument?.original_filename ?? selectedKnowledgeBase?.name ?? "Your workspace"}</h2>
+              <p>{chatScope === "folder"
+                ? selectedKnowledgeBase ? selectedFolderDocumentsLoading ? "Checking the files in this folder…" : `Asking across: ${selectedKnowledgeBase.name} (${readyFolderDocuments.length} document${readyFolderDocuments.length === 1 ? "" : "s"})` : "Choose a folder to chat across its ready files."
+                : selectedDocument ? "Questions and saved chats are tied to this file. Expand it in the sidebar to reopen a chat." : "Please select a file to use the chatbot."}</p>
             </div>
             <div className="chat-actions">
               <span className="pill">{documents.length} file{documents.length === 1 ? "" : "s"}</span>
-              <button className="chat-tool-button" type="button" onClick={handleNewChat} title="New chat" aria-label="Start a new chat" disabled={isBusy || !selectedDocumentId}>
+              <button className="chat-tool-button" type="button" onClick={handleNewChat} title="New chat" aria-label="Start a new chat" disabled={isBusy || !hasValidChatScope}>
                 <Plus size={17} />
               </button>
               {conversationId && messages.length > 0 && (
@@ -1236,16 +1427,24 @@ export default function App() {
             </div>
           )}
 
+          {chatScope === "folder" && selectedKnowledgeBase && !selectedFolderDocumentsLoading && readyFolderDocuments.length === 0 && (
+            <div className="folder-no-ready" role="status">This folder has no ready documents yet. Upload a PDF or TXT file and wait until it is ready, then ask a question across the folder.</div>
+          )}
+
           <div className="messages">
             {messages.length === 0 && (
               <div className="empty">
                 <BookOpen size={36} />
                 <h2>What would you like to learn?</h2>
-                <p>{selectedDocumentId
-                  ? "Ask about this file or choose a ready-made task. Your chats stay under the file, and you can download useful answers as PDFs."
-                  : <><strong>Hello {userProfile?.full_name.trim().split(/\s+/)[0] || "there"}</strong>, please choose a file or document first so I know what to use for your enquiry. <span className="desktop-file-location">Your files are in the left sidebar.</span><span className="mobile-file-location">Tap the folder button at the top to open the file list.</span> If there is no folder yet, create one in the sidebar, then use <strong>Add files</strong> to upload a document. After selecting a file, ask for a summary, an explanation, or anything else about it.</>}</p>
-                {!selectedDocumentId && <button className="mobile-open-files" type="button" onClick={() => setIsMobileSidebarOpen(true)}><Menu size={15} /> Open file list</button>}
-                {selectedDocumentId && (
+                {chatScope === "folder" && selectedKnowledgeBase && selectedFolderDocumentsLoading
+                  ? <p role="status">Checking the files in this folder…</p>
+                  : <p>{chatScope === "folder" && selectedKnowledgeBase
+                    ? <>Folder mode searches all ready documents in <strong>{selectedKnowledgeBase.name}</strong>. Choose <strong>This document</strong> to focus on one selected file. Answers show source file names and page numbers.</>
+                    : selectedDocumentId
+                      ? <>Document mode searches only <strong>{selectedDocument?.original_filename}</strong>. Choose <strong>This folder</strong> to search across every ready document in <strong>{selectedKnowledgeBase?.name}</strong>. Your chats stay under their selected scope.</>
+                      : <><strong>Hello {userProfile?.full_name.trim().split(/\s+/)[0] || "there"}</strong>, choose a folder to use <strong>This folder</strong> and search across its ready documents, or select a file and use <strong>This document</strong> to focus on that file. <span className="desktop-file-location">Your folders and files are in the left sidebar.</span><span className="mobile-file-location">Tap the folder button at the top to open the file list.</span> Upload a PDF or TXT file if you have not added one yet.</>}</p>}
+                {!selectedKnowledgeBase && <button className="mobile-open-files" type="button" onClick={() => setIsMobileSidebarOpen(true)}><Menu size={15} /> Open file list</button>}
+                {hasValidChatScope && (
                   <div className="prompt-suggestions">
                     {examplePrompts.map((example) => (
                       <button key={example.label} type="button" onClick={() => chooseExamplePrompt(example.prompt)}>
@@ -1274,7 +1473,7 @@ export default function App() {
                 )}
                 {message.sources && message.sources.length > 0 && (
                   <div className="sources">
-                    <strong>Sources</strong>
+                    <strong>{chatScope === "folder" ? `Sources from ${new Set(message.sources.map((source) => source.document_id)).size} document${new Set(message.sources.map((source) => source.document_id)).size === 1 ? "" : "s"}` : "Sources"}</strong>
                     {message.sources.map((source, sourceIndex) => (
                       <div className="source" key={`${source.document_id}-${sourceIndex}`}>
                         <span className="source-title">
@@ -1285,21 +1484,38 @@ export default function App() {
                     ))}
                   </div>
                 )}
+                {message.role === "assistant" && chatScope === "folder" && (!message.sources || message.sources.length === 0) && <div className="sources"><strong>Sources from 0 documents</strong></div>}
               </div>
             ))}
             {isBusy && <div className="muted" role="status" aria-live="polite">{busyMessage}</div>}
             <div ref={messagesEndRef} />
           </div>
 
+          {selectedKnowledgeBase && <div className="chat-scope-row">
+            <div className="chat-scope-toggle" role="group" aria-label="Chat search scope" onKeyDown={(event) => {
+              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+              const nextScope = event.key === "ArrowRight"
+                ? chatScope === "document" ? "folder" : "document"
+                : chatScope === "folder" ? "document" : "folder";
+              if (nextScope === "document" && !selectedDocument) return;
+              event.preventDefault();
+              if (nextScope !== chatScope && !isBusy) { clearCurrentConversation(); setChatScope(nextScope); }
+              event.currentTarget.querySelector<HTMLButtonElement>(`[data-chat-scope="${nextScope}"]`)?.focus();
+            }}>
+              <button data-chat-scope="document" type="button" className={chatScope === "document" ? "active" : ""} aria-pressed={chatScope === "document"} disabled={!selectedDocument || isBusy} onClick={() => { if (chatScope !== "document") { clearCurrentConversation(); setChatScope("document"); } }}>This document</button>
+              <button data-chat-scope="folder" type="button" className={chatScope === "folder" ? "active" : ""} aria-pressed={chatScope === "folder"} disabled={isBusy} onClick={() => { if (chatScope !== "folder") { clearCurrentConversation(); setChatScope("folder"); } }}>This folder</button>
+            </div>
+          </div>}
+
           <form className="composer" onSubmit={handleSendQuestion}>
             <input
               ref={questionInputRef}
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
-              placeholder={selectedDocumentId ? "Ask a question about the selected file…" : "Ask a question (choose a file first)…"}
+              placeholder={chatScope === "folder" && selectedKnowledgeBase ? "Ask a question across this folder…" : selectedDocumentId ? "Ask a question about the selected file…" : "Ask a question (choose a file first)…"}
               disabled={isBusy}
             />
-            <button disabled={isBusy || !question.trim()} aria-label="Send question">
+            <button disabled={isBusy || !question.trim() || !hasValidChatScope} aria-label="Send question">
               <Send size={19} />
             </button>
           </form>
@@ -1339,30 +1555,64 @@ export default function App() {
             <div className="upload-panel-heading">
               <div>
                 <h2 id="upload-title">Files in {selectedKnowledgeBase?.name ?? "this folder"}</h2>
-                <p>PDF or TXT · up to 10 MB per file</p>
+                <p>Supported: text-based PDF or TXT · maximum 10 MB per file</p>
               </div>
               <button className="icon-button" aria-label="Close uploads" onClick={() => setIsUploadPanelOpen(false)} disabled={isBusy}><X /></button>
             </div>
             <label className={`upload ${isBusy ? "disabled" : ""}`}>
               <Upload size={21} />
               <strong>{isBusy ? busyMessage : "Choose files to upload"}</strong>
-              <small>Files are added to the selected folder.</small>
-              <input type="file" accept=".pdf,.txt" multiple onChange={handleUpload} disabled={isBusy} />
+              <small>Files are added to the selected folder. Scanned or image-only PDFs are not supported; the PDF must contain selectable text.</small>
+              <input ref={uploadInputRef} type="file" accept=".pdf,.txt" multiple onChange={handleUpload} disabled={isBusy} />
             </label>
-            {errorMessage && <div className="error banner upload-error" role="alert">{errorMessage}</div>}
+            {uploadError && <div className="error banner upload-error" role="alert"><span>{uploadError}</span><button className="upload-try-another" type="button" disabled={isBusy} onClick={() => { if (uploadInputRef.current) uploadInputRef.current.value = ""; uploadInputRef.current?.click(); }}>Delete and try another file</button></div>}
+            {uploadSuccess && <div className="success banner upload-success" role="status">{uploadSuccess}</div>}
             <div className="filelist upload-filelist">
               {documents.map((document) => (
-                <div className="file" key={document.id}>
+                <div className={`file ${document.status === "failed" ? "file-failed" : ""}`} key={document.id}>
                   <FileText size={20} />
                   <div>
                     <strong title={document.original_filename}>{document.original_filename}</strong>
                     <small>{document.status} · {document.chunk_count} passages · {(document.file_size_bytes / 1024).toFixed(0)} KB</small>
-                    {document.processing_error && <small className="error document-error">{document.processing_error}</small>}
+                    {document.status === "failed" && <small className="error document-error">{friendlyProcessingError(document.processing_error)}</small>}
                   </div>
-                  <button onClick={() => void handleDeleteDocument(selectedKnowledgeBaseId, document.id)} title="Delete file" aria-label={`Delete ${document.original_filename}`}><Trash2 size={16} /></button>
+                  {document.status === "failed" ? (
+                    <button className="failed-upload-action" type="button" onClick={() => handleDeleteDocument(selectedKnowledgeBaseId, document)} aria-label={`Delete ${document.original_filename} and try another file`}>Delete and try another file</button>
+                  ) : (
+                    <button type="button" onClick={() => handleDeleteDocument(selectedKnowledgeBaseId, document)} title="Delete file" aria-label={`Delete ${document.original_filename}`}><Trash2 size={16} /></button>
+                  )}
                 </div>
               ))}
               {documents.length === 0 && <p className="muted">No files in this folder yet.</p>}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {deleteDialog && (
+        <div className="delete-confirm-backdrop">
+          <section className="delete-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-confirm-title" aria-describedby="delete-confirm-description">
+            <h2 id="delete-confirm-title">Delete {deleteDialog.target.kind === "document" ? "document" : "folder"}?</h2>
+            <p className="delete-confirm-item">{deleteDialog.target.kind === "document" ? deleteDialog.target.document.original_filename : deleteDialog.target.knowledgeBase.name}</p>
+            <p id="delete-confirm-description">
+              {deleteDialog.loading
+                ? "Checking saved conversations before you delete…"
+                : deleteDialog.target.kind === "document"
+                  ? `This document has ${deleteDialog.conversations?.length ?? 0} saved conversation${deleteDialog.conversations?.length === 1 ? "" : "s"}. Deleting it will permanently delete those conversations.`
+                  : `This folder contains ${deleteDialog.documentCount ?? 0} document${deleteDialog.documentCount === 1 ? "" : "s"} and ${deleteDialog.conversations?.length ?? 0} saved conversation${deleteDialog.conversations?.length === 1 ? "" : "s"}. Deleting it will permanently delete its files and conversations.`}
+            </p>
+            {deleteDialog.loading && <p className="delete-confirm-loading" role="status">Please wait while the history count is checked.</p>}
+            {deleteDialog.error && <div className="error delete-confirm-error" role="alert"><span>{deleteDialog.error}</span>
+              {!deleteDialog.deleting && <button type="button" className="delete-confirm-retry" onClick={() => void openDeleteConfirmation(deleteDialog.target, true)}>Retry</button>}
+            </div>}
+            <div className="delete-confirm-actions">
+              <button type="button" className="delete-confirm-cancel" autoFocus onClick={() => setDeleteDialog(null)} disabled={deleteDialog.deleting}>Cancel</button>
+              <button type="button" className="delete-confirm-download" onClick={() => void confirmDeleteWithHistory(true)} disabled={deleteDialog.loading || deleteDialog.deleting || !!deleteDialog.error || !deleteDialog.conversations?.length} title={!deleteDialog.loading && !deleteDialog.conversations?.length ? "There are no conversations to download." : undefined}>
+                {deleteDialog.deleting ? "Working…" : "Download conversations as PDF then delete"}
+              </button>
+              <button type="button" className="delete-confirm-anyway" onClick={() => void confirmDeleteWithHistory(false)} disabled={deleteDialog.loading || deleteDialog.deleting || !!deleteDialog.error}>
+                {deleteDialog.deleting ? "Deleting…" : "Delete anyway"}
+              </button>
             </div>
           </section>
         </div>
