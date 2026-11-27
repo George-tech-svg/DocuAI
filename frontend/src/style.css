@@ -765,6 +765,23 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
 .billing-message { display: flex; align-items: center; gap: 9px; width: 100%; max-width: 1160px; margin: 0 auto 14px; padding: 12px 14px; border: 1px solid #bedbc6; border-radius: 9px; background: #e3f1e7; color: #246344; font-size: 13px; }
 .billing-plan-list { display: grid; gap: 10px; margin-bottom: 28px; }
 
+/* Keep billing content on a calm, readable surface instead of inheriting the
+   blue workspace background from the global main element styles. */
+.billing-shell > main.admin-content {
+  padding: clamp(16px, 2.2vw, 28px);
+  border: 1px solid #c8d6df;
+  border-radius: 16px;
+  background: #eef3f5;
+  box-shadow: 0 8px 26px #18394a10;
+}
+.billing-shell .billing-current,
+.billing-shell .admin-plan-card,
+.billing-shell .admin-row { background: #fbfcfa; }
+.billing-shell .admin-section-heading p { color: #526a79; line-height: 1.55; }
+.billing-shell .billing-phone { max-width: 520px; color: #405d70; }
+.billing-shell .billing-phone input { min-height: 46px; background: #fff; }
+.billing-shell .admin-note { background: #e2ebef; color: #405d70; }
+
 .legal-wrap, .settings-wrap { position: fixed; inset: 0; z-index: 8; display: block; width: auto; height: auto; min-width: 0; min-height: 100dvh; flex: none; grid-template-rows: none; overflow: auto; padding: max(20px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); background: #e7f0e8; color: #24394b; }
 .legal-card, .settings-card { width: min(850px, 100%); margin: 0 auto; padding: clamp(18px, 4vw, 38px); border: 1px solid #c8d6df; border-radius: 18px; background: #f4f6f2; box-shadow: 0 14px 45px #18394a18; }
 .legal-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 18px; border-bottom: 1px solid #d6e0e3; }
