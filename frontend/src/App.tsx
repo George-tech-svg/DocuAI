@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, CSSProperties, FormEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -28,10 +28,10 @@ import {
 
 import { getErrorMessage, request } from "./api";
 import AssistantMessage from "./AssistantMessage";
-import AdminDashboard from "./AdminDashboard";
-import BillingPage from "./BillingPage";
-import TermsPrivacy from "./TermsPrivacy";
-import GoogleSignIn from "./GoogleSignIn";
+const AdminDashboard = lazy(() => import("./AdminDashboard"));
+const BillingPage = lazy(() => import("./BillingPage"));
+const TermsPrivacy = lazy(() => import("./TermsPrivacy"));
+const GoogleSignIn = lazy(() => import("./GoogleSignIn"));
 import { downloadAnswerPdf, downloadConversationPdf } from "./pdfExport";
 import type {
   AuthenticationResponse,
@@ -406,6 +406,7 @@ export default function App() {
       }
       localStorage.setItem("documind_token", response.access_token);
       setToken(response.access_token);
+      setUserProfile(response.user);
       setActivePage(response.user.is_superuser ? "admin" : "workspace");
       setPassword("");
     } catch (error) {
@@ -432,6 +433,7 @@ export default function App() {
       localStorage.setItem("documind_token", response.access_token);
       setAdminBootstrapAvailable(false);
       setToken(response.access_token);
+      setUserProfile(response.user);
       setActivePage("admin");
       setPassword("");
       setAdminSetupCode("");
@@ -457,6 +459,7 @@ export default function App() {
       });
       localStorage.setItem("documind_token", response.access_token);
       setToken(response.access_token);
+      setUserProfile(response.user);
       setActivePage(response.user.is_superuser ? "admin" : "workspace");
       setPassword("");
     } catch (error) {
@@ -736,7 +739,17 @@ export default function App() {
   async function handleSendQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedDocumentId) {
-      setErrorMessage("Please select a file to use the chatbot.");
+      if (!question.trim() || isBusy) return;
+      const firstName = userProfile?.full_name.trim().split(/\s+/)[0] || "there";
+      const whereToFindFiles = window.matchMedia("(max-width: 700px)").matches
+        ? "Tap the folder button at the top of the screen to open the file list."
+        : "Your files are in the left sidebar.";
+      setMessages((previous) => [...previous, {
+        role: "assistant",
+        content: `# Choose a file first\n\nHello ${firstName}, please choose a file or document that you want to ask about. ${whereToFindFiles} If there is no folder yet, create one in the sidebar first, then use **Add files** to upload a document. After selecting a file, ask for a summary, an explanation, or anything else about it.`,
+      }]);
+      setQuestion("");
+      setErrorMessage("");
       return;
     }
     if (!question.trim() || !selectedKnowledgeBaseId || isBusy) return;
@@ -780,7 +793,7 @@ export default function App() {
   }
 
   if (legalPage) {
-    return <TermsPrivacy document={legalPage} onOpen={setLegalPage} onBack={() => setLegalPage(null)} />;
+    return <Suspense fallback={<div className="app-loading" role="status">Loading…</div>}><TermsPrivacy document={legalPage} onOpen={setLegalPage} onBack={() => setLegalPage(null)} /></Suspense>;
   }
 
   // Before login, show only the authentication form.
@@ -846,11 +859,11 @@ export default function App() {
             </div>
           )}
 
-          {!isAdminLogin && <GoogleSignIn
+          {!isAdminLogin && <Suspense fallback={<div className="google-options-loading" role="status">Loading sign-in options…</div>}><GoogleSignIn
             mode={isRegistering ? "register" : "login"}
             acceptedTerms={hasAcceptedTerms}
             onCredential={(credential, mode, accepted) => void handleGoogleSignIn(credential, mode, accepted)}
-          />}
+          /></Suspense>}
 
           {isRegistering ? (
             <div className="auth-register-fields">
@@ -928,8 +941,8 @@ export default function App() {
     </main>
   );
 
-  if (activePage === "admin") return <AdminDashboard token={token} onBack={() => setActivePage("workspace")} />;
-  if (activePage === "billing") return <BillingPage token={token} onBack={() => setActivePage("workspace")} />;
+  if (activePage === "admin") return <Suspense fallback={<div className="app-loading" role="status">Loading admin tools…</div>}><AdminDashboard token={token} onBack={() => setActivePage("workspace")} /></Suspense>;
+  if (activePage === "billing") return <Suspense fallback={<div className="app-loading" role="status">Loading billing…</div>}><BillingPage token={token} onBack={() => setActivePage("workspace")} /></Suspense>;
 
   const selectedKnowledgeBase = knowledgeBases.find(
     (knowledgeBase) => knowledgeBase.id === selectedKnowledgeBaseId
@@ -1230,7 +1243,8 @@ export default function App() {
                 <h2>What would you like to learn?</h2>
                 <p>{selectedDocumentId
                   ? "Ask about this file or choose a ready-made task. Your chats stay under the file, and you can download useful answers as PDFs."
-                  : "Choose a ready file from the folder sidebar. Each file keeps its own chat history."}</p>
+                  : <><strong>Hello {userProfile?.full_name.trim().split(/\s+/)[0] || "there"}</strong>, please choose a file or document first so I know what to use for your enquiry. <span className="desktop-file-location">Your files are in the left sidebar.</span><span className="mobile-file-location">Tap the folder button at the top to open the file list.</span> If there is no folder yet, create one in the sidebar, then use <strong>Add files</strong> to upload a document. After selecting a file, ask for a summary, an explanation, or anything else about it.</>}</p>
+                {!selectedDocumentId && <button className="mobile-open-files" type="button" onClick={() => setIsMobileSidebarOpen(true)}><Menu size={15} /> Open file list</button>}
                 {selectedDocumentId && (
                   <div className="prompt-suggestions">
                     {examplePrompts.map((example) => (
@@ -1282,10 +1296,10 @@ export default function App() {
               ref={questionInputRef}
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
-              placeholder={selectedDocumentId ? "Ask a question about the selected file…" : "Choose a file to start chatting…"}
-              disabled={!selectedDocumentId || isBusy}
+              placeholder={selectedDocumentId ? "Ask a question about the selected file…" : "Ask a question (choose a file first)…"}
+              disabled={isBusy}
             />
-            <button disabled={!selectedDocumentId || isBusy || !question.trim()} aria-label="Send question">
+            <button disabled={isBusy || !question.trim()} aria-label="Send question">
               <Send size={19} />
             </button>
           </form>

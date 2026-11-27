@@ -39,6 +39,7 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .auth-legal-nav { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 17px; color: #607687; font-size: 12px; }
 .auth-legal-nav button, .sidebar-legal-links button { border: 0; padding: 5px 2px; background: transparent; color: #286fa9; text-decoration: underline; }
 .google-signin-wrap { width: min(430px, 92vw); }
+.google-options-loading { min-height: 44px; padding: 12px; color: #607687; text-align: center; font-size: 12px; }
 .auth-card .google-signin-wrap { width: 100%; margin: 14px 0 18px; }
 .auth-card-register .google-signin-wrap { margin: 8px 0 16px; }
 .auth-divider { display: flex; align-items: center; gap: 12px; margin: 17px 0; color: #758791; font-size: 12px; }
@@ -497,9 +498,13 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
 .empty { width: min(700px, 100%); max-width: 700px; padding: 18px; }
 .empty > svg { color: #748e80; }
 .empty p { margin: 8px auto 18px; max-width: 560px; color: #738479; line-height: 1.55; }
+.mobile-open-files { display: none; }
 .prompt-suggestions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; max-width: 590px; margin: 0 auto; }
+.desktop-file-location { display: inline; }
+.mobile-file-location { display: none; }
 .prompt-suggestions button { min-height: 48px; padding: 10px 12px; border: 1px solid #cadbd0; border-radius: 11px; background: #f5f8f3; color: #315b47; text-align: left; font-size: 13px; transition: background 140ms ease, border-color 140ms ease, transform 140ms ease; }
 .prompt-suggestions button:hover { transform: translateY(-1px); border-color: #98baa1; background: #eaf2e9; }
+.app-loading { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; min-height: 100dvh; padding: 24px; background: #4a90e2; color: #fff; font-size: 15px; font-weight: 650; }
 .help-backdrop { position: fixed; inset: 0; z-index: 22; display: flex; justify-content: flex-end; background: #172b3b55; }
 .help-panel { width: min(420px, 94vw); height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 24px; background: #f4f7f3; border-left: 1px solid #cbd9d3; box-shadow: -12px 0 40px #152f4326; animation: help-slide-in 180ms ease-out; }
 .help-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding-bottom: 17px; border-bottom: 1px solid #dce5dd; }
@@ -518,6 +523,9 @@ h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0
 @keyframes help-slide-in { from { transform: translateX(24px); opacity: .6; } to { transform: translateX(0); opacity: 1; } }
 
 @media (max-width: 700px) {
+  .desktop-file-location { display: none; }
+  .mobile-file-location { display: inline; }
+  .mobile-open-files { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 8px 12px; border: 1px solid #b9d0df; border-radius: 9px; background: #e5eff5; color: #315f7d; font-size: 13px; font-weight: 650; }
   .folder-menu-trigger { flex: 1; max-width: none; }
   .shell > aside .folder-tree { flex: 1 1 auto; min-height: 80px; }
   .shell > aside .history-section { flex: 0 1 34%; min-height: 110px; max-height: 230px; }
