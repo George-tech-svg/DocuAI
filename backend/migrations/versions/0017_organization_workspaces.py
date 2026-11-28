@@ -1,6 +1,7 @@
 """Add organizations, memberships, shared conversation metadata and billing."""
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 from sqlalchemy.dialects import postgresql
 
 revision = '0017'
@@ -83,9 +84,17 @@ def upgrade():
     op.create_foreign_key('fk_subscriptions_organization_id', 'subscriptions', 'organizations', ['organization_id'], ['id'], ondelete='CASCADE')
     op.create_index('ix_subscriptions_organization_id', 'subscriptions', ['organization_id'])
     op.create_check_constraint('ck_subscriptions_seat_limit', 'subscriptions', 'seat_limit IS NULL OR seat_limit > 0')
-    op.add_column('document_events', sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=True))
-    op.create_foreign_key('fk_document_events_organization_id', 'document_events', 'organizations', ['organization_id'], ['id'], ondelete='SET NULL')
-    op.create_index('ix_document_events_organization_id', 'document_events', ['organization_id'])
+    # Some existing deployments already have this column from an earlier
+    # schema variant. Keep the migration safe to resume on those databases.
+    inspector = inspect(op.get_bind())
+    if 'organization_id' not in {column['name'] for column in inspector.get_columns('document_events')}:
+        op.add_column('document_events', sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=True))
+    foreign_keys = inspect(op.get_bind()).get_foreign_keys('document_events')
+    if not any(fk.get('constrained_columns') == ['organization_id'] and fk.get('referred_table') == 'organizations' for fk in foreign_keys):
+        op.create_foreign_key('fk_document_events_organization_id', 'document_events', 'organizations', ['organization_id'], ['id'], ondelete='SET NULL')
+    indexes = inspect(op.get_bind()).get_indexes('document_events')
+    if not any(index.get('column_names') == ['organization_id'] for index in indexes):
+        op.create_index('ix_document_events_organization_id', 'document_events', ['organization_id'])
 
 def downgrade():
     op.drop_index('ix_document_events_organization_id', table_name='document_events')
