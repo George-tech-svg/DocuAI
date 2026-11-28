@@ -77,7 +77,7 @@ With backend dependencies installed and `DATABASE_URL` configured, run `npm run 
 
 ### Render worker deployment
 
-The root `render.yaml` describes a separate Render **Background Worker**. Create it from the repository Blueprint and configure `DATABASE_URL` to the same Neon/PostgreSQL URL as the Vercel backend, plus the same `MAX_UPLOAD_MB`. Configure `JWT_SECRET_KEY` because shared backend settings require it. The build command installs Tesseract, `eng` and `swa` trained data, libheif, and Python OCR/image dependencies, then preloads the embedding model. Set a restart policy so an exited worker is restarted. Vercel continues to host the UI/API; it only stores originals and enqueues work. Do not run the worker as a serverless function.
+The root `render.yaml` describes a separate Render **Background Worker**. Create it from the repository Blueprint and configure `DATABASE_URL` to the same Neon/PostgreSQL URL as the Vercel backend, plus the same `MAX_UPLOAD_MB`. Configure `JWT_SECRET_KEY` because shared backend settings require it. The worker also needs `DEEPSEEK_API_KEY` for automatic date extraction, Cloudinary credentials for privacy exports/deletions, and Bird/SMTP credentials if those notification channels are enabled. Keep these values server-side and consistent with the API service. The build command installs Tesseract, `eng` and `swa` trained data, libheif, and Python OCR/image dependencies, then preloads the embedding model. Set a restart policy so an exited worker is restarted. Vercel continues to host the UI/API; it stores originals and enqueues work. Do not run the worker as a serverless function.
 
 ### First administrator
 

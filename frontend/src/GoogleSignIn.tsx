@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { request } from "./api";
+import { getErrorMessage, request } from "./api";
 
 type GoogleCredential = { credential: string };
 type GoogleMode = "login" | "register";
@@ -41,7 +41,9 @@ export default function GoogleSignIn({ mode, acceptedTerms, onCredential }: {
         if (config.enabled && config.client_id) setClientId(config.client_id);
         else setLoadError("Google sign-in is not configured yet.");
       })
-      .catch(() => { if (!cancelled) setLoadError("Google sign-in is not configured yet."); });
+      .catch((error) => {
+        if (!cancelled) setLoadError(`Could not load Google sign-in settings. ${getErrorMessage(error)}`);
+      });
     return () => { cancelled = true; };
   }, [clientId]);
 

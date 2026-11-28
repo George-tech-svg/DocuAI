@@ -549,7 +549,7 @@ export default function App() {
       const endpoint = isRegistering ? "/auth/register" : "/auth/login";
       const credentials = isRegistering
         ? { full_name: fullName.trim(), email: email.trim(), password, accept_terms: hasAcceptedTerms }
-        : { email: email.trim(), password, totp_code: totpCode || undefined };
+        : { email: email.trim(), password, admin_login: isAdminLogin, totp_code: totpCode || undefined };
 
       const response = await request<AuthenticationResponse>(endpoint, "", {
         method: "POST",

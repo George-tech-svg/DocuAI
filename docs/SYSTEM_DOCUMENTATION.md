@@ -64,7 +64,7 @@ The admin dashboard’s integration indicators report whether required configura
 - A Google sign-in with a verified email that matches an existing password account signs into that account, preventing an email duplicate. A Google-only account has no password hash.
 - Google account creation is offered on the create-account form and requires Terms/Privacy acceptance. A new verified Google email creates a Google-only account; a matching existing account is reused. A new Google account can also be created through the Google sign-in API path, so one verified email still maps to one database account.
 - The sign-in page shows errors and loading feedback. The backend uses **“Incorrect email or password. Please try again.”** for both unknown emails and incorrect passwords to reduce account discovery; Google-only accounts receive **“This account was created with Google. Please sign in with Google.”**
-- A signed JWT is held in browser local storage. The current token lifetime in code is 24 hours; a valid session is checked against the server when the app loads. Sign-out clears the local session and returns to the sign-in page.
+- The API issues a signed JWT in an HttpOnly session cookie with a 24-hour lifetime. The browser checks the session with the server when the app loads; it does not store the session token in local storage. Unsafe browser requests include a matching CSRF cookie/header. Sign-out clears the cookies and returns to the sign-in page.
 - An administrator signs in using the administrator account’s normal email and password, then opens the admin console from account tools.
 - Registration and login show inline errors, success feedback, and disabled/loading buttons while requests are running. Network failures are shown as readable messages. Unknown email and wrong password intentionally share one login message; this is different from the older requested wording that distinguished those cases.
 
@@ -153,7 +153,7 @@ This activity view is computed from current database records, not a separate imm
 | Browser application | React 18, TypeScript, and Vite. Contains authentication, workspace, chat, PDF export, billing, and admin screens. |
 | API | FastAPI on Python 3.12, with versioned endpoints under `/api/v1`. |
 | Database | PostgreSQL (configured for Neon) with SQLAlchemy and Alembic migrations. `pgvector` stores 384-dimensional document vectors and performs similarity search. |
-| Authentication | Signed JWT bearer tokens; Argon2-backed password hashing through `pwdlib`; Google ID-token verification through `google-auth`. |
+| Authentication | Signed JWT in an HttpOnly session cookie, double-submit CSRF protection, Argon2-backed password hashing through `pwdlib`, and Google ID-token verification through `google-auth`. |
 | Document indexing | A PostgreSQL jobs table feeds a Render worker. pypdf/PyMuPDF extract and render PDFs; python-docx reads Word files; Pillow reads images; Tesseract performs `eng+swa` OCR; text is split into passages; FastEmbed runs a quantized MiniLM-L6-v2 embedding model. |
 | Answer generation | DeepSeek chat completions API, default model name `deepseek-flash`. |
 | Original file storage | Cloudinary raw-file storage. Text passages and vectors are stored in PostgreSQL. |
@@ -185,7 +185,7 @@ The unique email constraint enforces one account per email. Foreign keys and own
 
 ## 7. API reference
 
-All routes below are under `/api/v1`. Unless noted as public/callback, routes require a bearer token. Admin routes additionally require a superuser account. Exact request/response schemas are defined in `backend/app/schemas/` and endpoint code.
+All routes below are under `/api/v1`. Unless noted as public/callback, routes require the signed HttpOnly session cookie. Unsafe browser requests also require the matching CSRF cookie/header. Admin routes additionally require a superuser account. Exact request/response schemas are defined in `backend/app/schemas/` and endpoint code.
 
 | Method and route | Access | Purpose |
 |---|---|---|
@@ -194,8 +194,8 @@ All routes below are under `/api/v1`. Unless noted as public/callback, routes re
 | `GET /auth/admin/bootstrap/status` | Public | Returns whether first-admin setup is configured/available and whether an admin exists; never returns the setup code. |
 | `POST /auth/admin/bootstrap` | Public, one-time guarded | Set up/promote the first administrator using the backend bootstrap code. |
 | `POST /auth/register` | Public | Create an email/password user. |
-| `POST /auth/login` | Public | Verify email/password and issue a JWT. |
-| `POST /auth/google` | Public | Verify a Google ID token, create or match the user, and issue a JWT. |
+| `POST /auth/login` | Public | Verify email/password and set the HttpOnly session cookie. |
+| `POST /auth/google` | Public | Verify a Google ID token, create or match the user, and set the HttpOnly session cookie. |
 | `GET /auth/me` | Member | Return the current user profile. |
 | `GET /knowledge-bases`, `POST /knowledge-bases` | Member | List or create folders. |
 | `GET /knowledge-bases/{kb_id}`, `PATCH /knowledge-bases/{kb_id}`, `DELETE /knowledge-bases/{kb_id}` | Owner | Read, update, or delete a folder. |
@@ -276,13 +276,13 @@ Set these as **backend/server** variables in Vercel Project Settings → Environ
 | `MPESA_TRANSACTION_TYPE` | Optional | Defaults to `CustomerPayBillOnline`; confirm whether this is appropriate for the assigned PayBill/Till configuration. |
 | `SUBSCRIPTIONS_ENFORCED` | Optional | Defaults to `false`. Set to `true` only after plans, live payments, and callbacks have been verified. |
 | `FRONTEND_ORIGIN` / `FRONTEND_URL` | Recommended | Public frontend origin used by CORS and as callback fallback. `FRONTEND_URL` is an accepted alias. Use the active deployed domain without a trailing slash. |
-| `FRONTEND_ORIGINS` | Optional | Additional comma-separated allowed frontend origins. |
+| `FRONTEND_ORIGINS` | Optional | Additional comma-separated allowed frontend origins, including each preview origin that needs cross-origin API access. The API uses credentialed cookies and does not trust all `vercel.app` subdomains automatically. |
 | `MAX_UPLOAD_MB` / `MAX_UPLOAD_SIZE_MB` | Optional setting | Per-file upload limit in MB; defaults to 10 and is clamped between 1 and the service ceiling of 50 MB. Set the same value for the Vercel API and Render worker. A host proxy may enforce a lower request limit. |
 | `MAX_EXTRACTED_CHARS` | Optional | Extracted-text bound; code caps it at 5,000,000 characters. |
 | `JOB_POLL_SECONDS` | Render worker optional | Seconds between queue polls when no job is ready; defaults to 3. |
 | `API_V1_PREFIX` | Optional | Defaults to `/api/v1`. Change only if routes and callback construction are intentionally reconfigured together. |
 
-The frontend normally uses the same-domain `/api/v1` path. `VITE_API_BASE_URL` is only for a frontend pointed to a separate API; leave it unset for the Vercel same-domain rewrite. Local development can use `VITE_DEV_API_PROXY_TARGET` or a local `VITE_API_BASE_URL`.
+The frontend normally uses the same-domain `/api/v1` path. `VITE_API_BASE_URL` can point to a separate API, but the frontend and API must remain same-site (for example, sibling subdomains) for the `SameSite=Lax` cookie session to work reliably. Leave it unset for the Vercel same-domain rewrite. Local development can use `VITE_DEV_API_PROXY_TARGET` or a local `VITE_API_BASE_URL`.
 
 ### Current production configuration notes
 
@@ -313,12 +313,12 @@ Do not run ad-hoc SQL to create the first administrator. Use the first-admin set
 - The backend settings load repository `frontend/.env` and `backend/.env` (shell environment variables take precedence). Never commit either env file or place server secrets in frontend env files.
 - Configure a development API proxy or `VITE_API_BASE_URL` as described above.
 - Apply migrations before using the app against a fresh or changed database.
-- For asynchronous indexing locally, install `backend/requirements-worker.txt`, install Tesseract with `eng` and `swa` data plus libheif, set backend environment values, then run `python backend/worker.py` in a separate long-lived terminal. Run `python backend/worker.py` only after applying migration `0013`.
+- For asynchronous indexing locally, install `backend/requirements-worker.txt`, install Tesseract with `eng` and `swa` data plus libheif, set backend environment values, then run `python backend/worker.py` in a separate long-lived terminal. Set `AUTH_COOKIE_SECURE=false` for plain-HTTP local browser sessions. Run `python backend/worker.py` only after applying migration `0013`.
 
 ## 11. Security and privacy behavior
 
 - Password hashes use the recommended `pwdlib` password hashing implementation; plaintext passwords are not stored.
-- JWTs are signed with `JWT_SECRET_KEY`, expire after 24 hours, and are sent as bearer tokens to protected API routes.
+- JWTs are signed with `JWT_SECRET_KEY`, expire after 24 hours, and are sent in an HttpOnly, Secure-by-default session cookie. Unsafe browser requests must also send the matching CSRF cookie value in `X-CSRF-Token`.
 - Backend authorization checks active user state, admin status, and object ownership. Optional subscription checks happen on upload/chat when enabled.
 - Google ID tokens are verified server-side, including the configured audience and verified email. The client ID is not a secret; the backend does not need a Google client secret for this credential flow.
 - Daraja consumer credentials, passkey, database URL, JWT key, DeepSeek key, Cloudinary secret, and admin bootstrap code are server secrets. Never expose them through `VITE_*`, the browser, screenshots, logs, or committed files.
@@ -372,7 +372,7 @@ backend/ENV_SETUP.md          Existing environment and deployment notes
 
 - [ ] Confirm Vercel frontend and backend services both build from the intended branch/commit.
 - [ ] Apply the latest Alembic migration to the production database.
-- [ ] Create the Render Background Worker from `render.yaml`; set `DATABASE_URL` to exactly the same database used by Vercel, and set the same `MAX_UPLOAD_MB` value and a strong `JWT_SECRET_KEY`.
+- [ ] Create the Render Background Worker from `render.yaml`; set `DATABASE_URL` to exactly the same database used by Vercel, the same `MAX_UPLOAD_MB`, a strong `JWT_SECRET_KEY`, the DeepSeek key, and Cloudinary credentials. Add Bird/SMTP values when those channels are enabled.
 - [ ] Confirm the Render build installed Tesseract, `eng` and `swa` language data, and libheif; confirm the worker starts and remains online.
 - [ ] Upload a normal PDF, a scanned PDF, a DOCX, a JPG/PNG photo, and a HEIC photo; confirm HTTP 202, queue completion, progress stages, OCR confidence, and an answer grounded in the indexed document.
 - [ ] Stop the worker briefly, upload a test file, restart the worker, and verify the queued job is reclaimed and completed. Exercise retry and terminal failure from the admin Jobs area.
@@ -605,7 +605,7 @@ Members can mark an answer Helpful, Not helpful, or Report a wrong answer. `POST
 .\.venv\Scripts\python.exe -m evals.run_eval
 ```
 
-This calls the configured DeepSeek model and prints each case plus citation accuracy, refusal accuracy, mean latency, and p95 latency. It needs `DEEPSEEK_API_KEY`; it is an online integration evaluation, not an offline unit test. The default CI gates are 90% citation accuracy, 90% refusal accuracy, and p95 latency at or below 45 seconds. The GitHub Actions job runs when `DEEPSEEK_API_KEY` is configured as a repository or organization Actions secret; without that secret the model evaluation job is skipped. Tune thresholds only with a reviewed dataset and a reasoned baseline. The dataset deliberately contains no real legal, tax, medical, or personal records.
+This calls the configured DeepSeek model and prints each case plus citation accuracy, refusal accuracy, mean latency, and p95 latency. It needs `DEEPSEEK_API_KEY`; it is an online integration evaluation, not an offline unit test. The default CI gates are 90% citation accuracy, 90% refusal accuracy, and p95 latency at or below 45 seconds. The GitHub Actions workflow always runs a secret check; with `DEEPSEEK_API_KEY` configured as a repository or organization Actions secret it runs the model evaluation, otherwise it completes with an explicit skipped notice. Tune thresholds only with a reviewed dataset and a reasoned baseline. The dataset deliberately contains no real legal, tax, medical, or personal records.
 
 ### Phase 6 deployment and verification
 

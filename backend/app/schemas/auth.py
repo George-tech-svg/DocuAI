@@ -24,6 +24,7 @@ class UserRegistrationRequest(UserRegister):
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+    admin_login: bool = False
     totp_code: str | None = Field(default=None, min_length=6, max_length=8)
 
 class GoogleLoginRequest(BaseModel):

@@ -16,8 +16,26 @@ on:
       - '.github/workflows/phase6-eval.yml'
 
 jobs:
+  check-evaluation-secret:
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - name: Check whether model evaluation is configured
+        id: check
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        shell: bash
+        run: |
+          if [ -n "$DEEPSEEK_API_KEY" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
   answer-evaluation:
-    if: ${{ secrets.DEEPSEEK_API_KEY != '' }}
+    needs: check-evaluation-secret
+    if: needs.check-evaluation-secret.outputs.configured == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -35,4 +53,12 @@ jobs:
           EVAL_MIN_REFUSAL: '0.90'
           EVAL_MAX_P95_MS: '45000'
         run: python -m evals.run_eval
+
+  evaluation-not-configured:
+    needs: check-evaluation-secret
+    if: needs.check-evaluation-secret.outputs.configured != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain why the model evaluation was skipped
+        run: echo "Model evaluation skipped. Add DEEPSEEK_API_KEY as a repository or organization Actions secret to enable it."
 

@@ -147,6 +147,8 @@ def login(data: UserLogin, request: Request, response: Response, db: Session=Dep
     except AuthenticationError:
         record_login_failure(db, normalized_email)
         raise HTTPException(401, 'Incorrect email or password. Please try again.')
+    if data.admin_login and not user.is_superuser:
+        raise HTTPException(403, 'This account does not have administrator access. Sign in with an administrator account.')
     try:
         require_admin_totp(user, data.totp_code)
     except HTTPException:

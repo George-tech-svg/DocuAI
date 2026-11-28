@@ -10,6 +10,40 @@ services:
         sync: false
       - key: JWT_SECRET_KEY
         sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: DEEPSEEK_MODEL
+        value: deepseek-flash
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: SMTP_STARTTLS
+        value: "true"
+      - key: BIRD_API_KEY
+        sync: false
+      - key: BIRD_WORKSPACE_ID
+        sync: false
+      - key: BIRD_WHATSAPP_NUMBER_ID
+        sync: false
+      - key: BIRD_WHATSAPP_REMINDER_TEMPLATE_SLUG
+        sync: false
+      - key: BIRD_WHATSAPP_NOTIFICATION_TEMPLATE_SLUG
+        sync: false
+      - key: BIRD_WHATSAPP_OTP_TEMPLATE_SLUG
+        value: bird_otp
       - key: MAX_UPLOAD_MB
         value: "10"
       - key: MAX_EXTRACTED_CHARS

@@ -24,8 +24,10 @@ async def csrf_guard(request: Request, call_next):
     if request.method in {'GET', 'HEAD', 'OPTIONS', 'TRACE'}:
         return await call_next(request)
     path = request.url.path
-    external_callbacks = {'/api/v1/billing/mpesa/callback', '/api/v1/channels/whatsapp/webhook'}
-    if path in external_callbacks:
+    api_prefix = get_settings().API_V1_PREFIX.rstrip('/')
+    mpesa_callback_prefix = f'{api_prefix}/billing/mpesa/callback/'
+    whatsapp_webhook_path = f'{api_prefix}/channels/whatsapp/webhook'
+    if path.startswith(mpesa_callback_prefix) or path == whatsapp_webhook_path:
         return await call_next(request)
     cookie_value = request.cookies.get('documind_csrf')
     header_value = request.headers.get('X-CSRF-Token')
@@ -43,10 +45,8 @@ def home():
 app = CORSMiddleware(
     app=api,
     allow_origins=sorted(allowed_origins),
-    # Vercel assigns both stable and deployment-specific hostnames. Keep the
-    # exact configured origins above and allow HTTPS Vercel aliases as well,
-    # so preview/prod host changes do not silently block browser API calls.
-    allow_origin_regex=r'^https://[a-z0-9-]+\.vercel\.app$',
+    # The app uses credentialed cookie sessions. Trust only configured origins;
+    # preview deployments must be explicitly listed in FRONTEND_ORIGINS.
     allow_credentials=True,
     allow_methods=['*'],
     allow_headers=['*'],

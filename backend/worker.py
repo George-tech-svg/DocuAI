@@ -175,11 +175,18 @@ def process_one() -> bool:
         logger.exception('Job %s failed: %s', job_id, safe_error)
         with SessionLocal() as db:
             result = fail_job(db, job_id, WORKER_ID, safe_error)
-            if result == 'failed' and job.type == 'index_document' and document_id:
+            payload = job.payload if isinstance(job.payload, dict) else {}
+            failed_document_id = payload.get('document_id')
+            if result == 'failed' and job.type == 'index_document' and failed_document_id:
                 from app.models.entities import WhatsAppDocumentUpload
-                if db.scalar(__import__('sqlalchemy').select(WhatsAppDocumentUpload.id).where(WhatsAppDocumentUpload.document_id == UUID(str(document_id)))):
-                    db.add(Job(type='whatsapp_document_failed', payload={'document_id': str(document_id)}, max_attempts=3))
-                    db.commit()
+                try:
+                    failed_document_uuid = UUID(str(failed_document_id))
+                except (ValueError, TypeError, AttributeError):
+                    logger.error('Failed indexing job %s has an invalid document id.', job_id)
+                else:
+                    if db.scalar(__import__('sqlalchemy').select(WhatsAppDocumentUpload.id).where(WhatsAppDocumentUpload.document_id == failed_document_uuid)):
+                        db.add(Job(type='whatsapp_document_failed', payload={'document_id': str(failed_document_uuid)}, max_attempts=3))
+                        db.commit()
         logger.warning('Job %s result after error: %s.', job_id, result)
     finally:
         stop_heartbeat.set()

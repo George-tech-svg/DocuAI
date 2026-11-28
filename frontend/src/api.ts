@@ -37,10 +37,37 @@ export async function request<T>(
   if (!['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(method)) {
     let csrf = document.cookie.split('; ').find((part) => part.startsWith('documind_csrf='))?.split('=').slice(1).join('=');
     if (!csrf) {
-      const csrfResponse = await fetch(`${API_BASE_URL}/auth/csrf`, { credentials: 'include' });
-      if (!csrfResponse.ok) throw new Error('Could not verify this request. Refresh the page and try again.');
-      const body = await csrfResponse.json() as { csrf_token?: string };
-      csrf = body.csrf_token;
+      const csrfController = new AbortController();
+      const csrfTimeout = window.setTimeout(() => csrfController.abort(), 10_000);
+      try {
+        const csrfResponse = await fetch(`${API_BASE_URL}/auth/csrf`, {
+          credentials: 'include',
+          signal: csrfController.signal,
+        });
+        if (!csrfResponse.ok) {
+          let detail = '';
+          try {
+            const body = await csrfResponse.json() as { detail?: unknown };
+            if (typeof body.detail === 'string') detail = body.detail;
+          } catch { /* Use the clear status-based message below. */ }
+          throw new Error(detail || (csrfResponse.status >= 500
+            ? 'The authentication service is temporarily unavailable. Please try again later.'
+            : 'Could not start secure sign-in. Refresh the page and try again.'));
+        }
+        const body = await csrfResponse.json() as { csrf_token?: string };
+        csrf = body.csrf_token;
+        if (!csrf) throw new Error('Could not start secure sign-in. Refresh the page and try again.');
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          throw new Error('The authentication service took too long to respond. Please try again.');
+        }
+        if (error instanceof TypeError) {
+          throw new Error('Network error. Please check your connection and try again.');
+        }
+        throw error;
+      } finally {
+        window.clearTimeout(csrfTimeout);
+      }
     }
     if (csrf) headers.set('X-CSRF-Token', decodeURIComponent(csrf));
   }
