@@ -685,9 +685,9 @@ export default function App() {
     catch(error){setErrorMessage(getErrorMessage(error));}finally{setPrivacyExportBusy(false);}
   }
   async function requestAccountDeletion(){
-    const confirmation=window.prompt('This queues deletion of your personal folders, original files, extracted text and vectors, conversations, reminders, WhatsApp link, sign-in factors, and account profile. Required audit references remain. Type DELETE MY ACCOUNT to continue.');
+    const confirmation=window.prompt('This asks us to delete your account, folders, files, chats, reminders, and linked WhatsApp account. Some records may need to stay for safety or legal reasons. Type DELETE MY ACCOUNT to continue.');
     if(confirmation!=='DELETE MY ACCOUNT')return;
-    try{await request('/privacy/account',token,{method:'DELETE',body:JSON.stringify({confirmation})});setSuccessMessage('Your account deletion request is queued. Your personal data will be removed by the background worker.');await request('/auth/logout',token,{method:'POST'});setToken('');setUserProfile(null);}
+    try{await request('/privacy/account',token,{method:'DELETE',body:JSON.stringify({confirmation})});setSuccessMessage('Your account deletion request was received. Cleanup will run shortly.');await request('/auth/logout',token,{method:'POST'});setToken('');setUserProfile(null);}
     catch(error){setErrorMessage(getErrorMessage(error));}
   }
 
@@ -931,7 +931,7 @@ export default function App() {
         const remaining = failures.length > 3 ? `; and ${failures.length - 3} more` : "";
         setUploadError(uploaded ? `${uploaded} of ${files.length} files uploaded. ${shownFailures}${remaining}` : `${shownFailures}${remaining}`);
       } else if (uploaded) {
-        setUploadSuccess(`${uploaded} document${uploaded === 1 ? " was" : "s were"} uploaded. Processing continues in the background.`);
+        setUploadSuccess(`${uploaded} file${uploaded === 1 ? " was" : "s were"} uploaded. Your files are being prepared. You can keep using the app.`);
       }
     } catch (error) {
       setUploadError(friendlyUploadError(error));
@@ -1408,14 +1408,14 @@ export default function App() {
         ><X size={20} /></button>
 
         <div className="smalltitle">FOLDERS</div>
-        <button type="button" className="sidebar-library-link" onClick={() => { setActivePage("library"); setIsMobileSidebarOpen(false); }}><BookOpen size={17}/> Kenyan library</button>
-        <label className="organization-switcher">Workspace
+        <button type="button" className="sidebar-library-link" onClick={() => { setActivePage("library"); setIsMobileSidebarOpen(false); }}><BookOpen size={17}/> Public documents</button>
+        <label className="organization-switcher">Folders
           <select value={activeOrganizationId} onChange={(event) => { clearCurrentConversation(); setActiveOrganizationId(event.target.value); setSelectedKnowledgeBaseId(""); setSelectedDocumentId(""); setDocuments([]); setChatScope("folder"); setConversationVisibility("private"); }}>
             <option value="">Personal folders</option>
             {organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}
           </select>
         </label>
-        <button type="button" className="sidebar-library-link" onClick={() => { setActivePage("organizations"); setIsMobileSidebarOpen(false); }}>Manage organizations</button>
+        <button type="button" className="sidebar-library-link" onClick={() => { setActivePage("organizations"); setIsMobileSidebarOpen(false); }}>Manage teams</button>
 
         <form className="newkb" onSubmit={handleCreateKnowledgeBase}>
           <input
@@ -1516,7 +1516,7 @@ export default function App() {
                               {document.is_archived && <small>archived</small>}
                               {document.is_pinned && <Pin size={12} aria-label="Pinned" />}
                               {document.status !== "ready" && (
-                                <small>{document.status === "pending" || document.status === "processing" ? `Processing: ${document.progress_stage}` : document.status}</small>
+                                <small>{document.status === "pending" || document.status === "processing" ? "Getting file ready…" : document.status === "failed" ? "Could not prepare file" : "Waiting"}</small>
                               )}
                             </button>
                             {canManageActiveOrg && <ItemActionMenu
@@ -1541,7 +1541,7 @@ export default function App() {
                             </div>
                           )}
                           {document.status === "ready" && document.low_ocr_confidence && (
-                            <div className="ocr-quality-warning" role="status">Some scanned text may be unclear{document.ocr_confidence !== null ? ` (${Math.round(document.ocr_confidence)}% OCR confidence)` : ""}. Check important details against the original.</div>
+                            <div className="ocr-quality-warning" role="status">Some text in this scan may be hard to read{document.ocr_confidence !== null ? ` (${Math.round(document.ocr_confidence)}% clear)` : ""}. Check important details against the original.</div>
                           )}
                           {isDocumentExpanded && (
                             <div className="document-chat-list" aria-label={`Chats about ${document.original_filename}`}>
@@ -1654,9 +1654,9 @@ export default function App() {
         <section className="chat">
           <div className="chat-heading">
             <div>
-              <h2>{chatScope === "library" ? "Kenyan public library" : chatScope === "folder_library" ? selectedKnowledgeBase?.name ?? "Folder + library" : chatScope === "folder" ? selectedKnowledgeBase?.name ?? "Your workspace" : selectedDocument?.original_filename ?? selectedKnowledgeBase?.name ?? "Your workspace"}</h2>
-              <p>{chatScope === "library" ? "Searching current official library documents." : chatScope === "folder_library" ? `Asking across: ${selectedKnowledgeBase?.name ?? "selected folder"} (${readyFolderDocuments.length} folder documents) + Kenyan library` : chatScope === "folder"
-                ? selectedKnowledgeBase ? selectedFolderDocumentsLoading ? "Checking the files in this folder…" : `Asking across: ${selectedKnowledgeBase.name} (${readyFolderDocuments.length} document${readyFolderDocuments.length === 1 ? "" : "s"})` : "Choose a folder to chat across its ready files."
+              <h2>{chatScope === "library" ? "Kenyan public documents" : chatScope === "folder_library" ? selectedKnowledgeBase?.name ?? "Folder + public documents" : chatScope === "folder" ? selectedKnowledgeBase?.name ?? "Your files" : selectedDocument?.original_filename ?? selectedKnowledgeBase?.name ?? "Your files"}</h2>
+              <p>{chatScope === "library" ? "Searching Kenyan public documents." : chatScope === "folder_library" ? `Searching ${selectedKnowledgeBase?.name ?? "this folder"} (${readyFolderDocuments.length} files) and Kenyan public documents` : chatScope === "folder"
+                ? selectedKnowledgeBase ? selectedFolderDocumentsLoading ? "Checking this folder…" : `Searching ${selectedKnowledgeBase.name} (${readyFolderDocuments.length} files)` : "Choose a folder to search its files."
                 : selectedDocument ? "Questions and saved chats are tied to this file. Expand it in the sidebar to reopen a chat." : "Please select a file to use the chatbot."}</p>
             </div>
             <div className="chat-actions">
@@ -1717,10 +1717,10 @@ export default function App() {
                 {chatScope === "folder" && selectedKnowledgeBase && selectedFolderDocumentsLoading
                   ? <p role="status">Checking the files in this folder…</p>
                   : <p>{chatScope === "folder" && selectedKnowledgeBase
-                    ? <>Folder mode searches all ready documents in <strong>{selectedKnowledgeBase.name}</strong>. Choose <strong>This document</strong> to focus on one selected file. Answers show source file names and page numbers.</>
+                    ? <>Search all ready files in <strong>{selectedKnowledgeBase.name}</strong>. Choose <strong>This file</strong> to search one file. Answers show file names and page numbers.</>
                     : selectedDocumentId
-                      ? <>Document mode searches only <strong>{selectedDocument?.original_filename}</strong>. Choose <strong>This folder</strong> to search across every ready document in <strong>{selectedKnowledgeBase?.name}</strong>. Your chats stay under their selected scope.</>
-                      : <><strong>Hello {userProfile?.full_name.trim().split(/\s+/)[0] || "there"}</strong>, choose a folder to use <strong>This folder</strong> and search across its ready documents, or select a file and use <strong>This document</strong> to focus on that file. <span className="desktop-file-location">Your folders and files are in the left sidebar.</span><span className="mobile-file-location">Tap the folder button at the top to open the file list.</span> Upload PDF, TXT, DOCX, JPG, PNG, or HEIC files if you have not added one yet.</>}</p>}
+                      ? <>Search only <strong>{selectedDocument?.original_filename}</strong>. Choose <strong>This folder</strong> to search all ready files in <strong>{selectedKnowledgeBase?.name}</strong>. Chats stay with the file or folder you chose.</>
+                      : <><strong>Hello {userProfile?.full_name.trim().split(/\s+/)[0] || "there"}</strong>, choose a folder to use <strong>This folder</strong> and search its ready files, or select a file and use <strong>This file</strong> to search only that file. <span className="desktop-file-location">Your folders and files are in the left sidebar.</span><span className="mobile-file-location">Tap the folder button at the top to open the file list.</span> Upload PDF, TXT, DOCX, JPG, PNG, or HEIC files if you have not added one yet.</>}</p>}
                 {!selectedKnowledgeBase && <button className="mobile-open-files" type="button" onClick={() => setIsMobileSidebarOpen(true)}><Menu size={15} /> Open file list</button>}
                 {hasValidChatScope && (
                   <div className="prompt-suggestions">
@@ -1797,9 +1797,9 @@ export default function App() {
               if (nextScope !== chatScope && !isBusy) { clearCurrentConversation(); setChatScope(nextScope); }
               event.currentTarget.querySelector<HTMLButtonElement>(`[data-chat-scope="${nextScope}"]`)?.focus();
             }}>
-              <button data-chat-scope="document" type="button" className={chatScope === "document" ? "active" : ""} aria-pressed={chatScope === "document"} disabled={!selectedDocument || isBusy} onClick={() => { if (chatScope !== "document") { clearCurrentConversation(); setChatScope("document"); } }}>This document</button>
+              <button data-chat-scope="document" type="button" className={chatScope === "document" ? "active" : ""} aria-pressed={chatScope === "document"} disabled={!selectedDocument || isBusy} onClick={() => { if (chatScope !== "document") { clearCurrentConversation(); setChatScope("document"); } }}>This file</button>
               <button data-chat-scope="folder" type="button" className={chatScope === "folder" ? "active" : ""} aria-pressed={chatScope === "folder"} disabled={isBusy} onClick={() => { if (chatScope !== "folder") { clearCurrentConversation(); setChatScope("folder"); } }}>This folder</button>
-              {selectedKnowledgeBase && <button data-chat-scope="folder_library" type="button" className={chatScope === "folder_library" ? "active" : ""} aria-pressed={chatScope === "folder_library"} disabled={isBusy} onClick={() => { if (chatScope !== "folder_library") { clearCurrentConversation(); setChatScope("folder_library"); } }}>Folder + library</button>}
+              {selectedKnowledgeBase && <button data-chat-scope="folder_library" type="button" className={chatScope === "folder_library" ? "active" : ""} aria-pressed={chatScope === "folder_library"} disabled={isBusy} onClick={() => { if (chatScope !== "folder_library") { clearCurrentConversation(); setChatScope("folder_library"); } }}>Folder + public docs</button>}
             </div>
             {!!selectedKnowledgeBase.organization_id && <label className="conversation-visibility">Conversation
               <select value={conversationVisibility} onChange={(event) => void changeConversationVisibility(event.target.value as "private" | "shared")} disabled={isBusy}>
@@ -1860,11 +1860,11 @@ export default function App() {
               </div>
               <button className="icon-button" aria-label="Close uploads" onClick={() => setIsUploadPanelOpen(false)} disabled={isBusy}><X /></button>
             </div>
-            {selectedKnowledgeBase?.is_sensitive && <p className="sensitive-upload-warning" role="alert"><strong>Sensitive folder.</strong> Uploaded content may be sent to DeepSeek when you use chat. Do not upload sensitive information unless your organization permits this processing. This warning does not block external AI processing.</p>}
+            {selectedKnowledgeBase?.is_sensitive && <p className="sensitive-upload-warning" role="alert"><strong>Private folder.</strong> When you ask a question, file text may be sent to our AI service. Only add private files if your team allows this.</p>}
             <label className={`upload ${isBusy ? "disabled" : ""}`}>
               <Upload size={21} />
               <strong>{isBusy ? busyMessage : "Choose files to upload"}</strong>
-              <small>Scanned PDFs and photos are read with OCR. Clear scans work best. Select several JPG/PNG photos to combine them into one PDF in the order selected.</small>
+              <small>We can read scanned PDFs and photos. Clear images work best. Choose several photos to combine them into one PDF.</small>
               <input ref={uploadInputRef} type="file" accept=".pdf,.txt,.docx,.jpg,.jpeg,.png,.heic" multiple onChange={handleUpload} disabled={isBusy} />
             </label>
             <div className="photo-upload-actions">
@@ -1881,9 +1881,9 @@ export default function App() {
                   <FileText size={20} />
                   <div>
                     <strong title={document.original_filename}>{document.original_filename}</strong>
-                    <small>{document.status === "pending" || document.status === "processing" ? `Processing · ${document.progress_stage}` : document.status} · {document.chunk_count} passages · {(document.file_size_bytes / 1024).toFixed(0)} KB</small>
+                    <small>{document.status === "pending" || document.status === "processing" ? "Getting file ready…" : document.status === "ready" ? "Ready" : document.status === "failed" ? "Could not prepare file" : "Waiting"} · {document.chunk_count} text sections · {(document.file_size_bytes / 1024).toFixed(0)} KB</small>
                     {(document.status === "pending" || document.status === "processing") && document.processing_error && <small className="document-retry-note" role="status">A retry is scheduled: {friendlyProcessingError(document.processing_error)}</small>}
-                    {document.status === "ready" && document.low_ocr_confidence && <small className="ocr-quality-warning" role="status">OCR confidence is low{document.ocr_confidence !== null ? ` (${Math.round(document.ocr_confidence)}%)` : ""}. Some text may be unclear.</small>}
+                    {document.status === "ready" && document.low_ocr_confidence && <small className="ocr-quality-warning" role="status">This scan may be hard to read{document.ocr_confidence !== null ? ` (${Math.round(document.ocr_confidence)}% clear)` : ""}. Some text may be unclear.</small>}
                     {document.status === "failed" && <small className="error document-error">{friendlyProcessingError(document.processing_error)}</small>}
                     {(document.status === "pending" || document.status === "processing") && document.processing_error && <small className="document-retry-note" role="status">A retry is scheduled: {friendlyProcessingError(document.processing_error)}</small>}
                   </div>

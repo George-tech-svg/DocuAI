@@ -85,7 +85,7 @@ export default function BillingPage({ token, onBack, organizationId = null }: { 
   return (
     <div className="admin-shell billing-shell">
       <header className="admin-header">
-        <button className="admin-back" type="button" onClick={onBack}><ArrowLeft size={17} /> Workspace</button>
+        <button className="admin-back" type="button" onClick={onBack}><ArrowLeft size={17} /> Back to folders</button>
         <div><span>YOUR ACCOUNT</span><h1>Plan &amp; billing</h1></div>
         <button className="admin-secondary" type="button" disabled={loading} onClick={() => void refresh()}><RefreshCw size={15} />{loading ? "Loading…" : "Refresh"}</button>
       </header>
@@ -97,12 +97,12 @@ export default function BillingPage({ token, onBack, organizationId = null }: { 
           <div><span>Current access</span><h2>{billing?.subscription?.plan_name ?? "No active plan"}</h2></div>
           <p>{billing?.subscription ? `${billing.subscription.status}${billing.subscription.expires_at ? ` · valid through ${new Date(billing.subscription.expires_at).toLocaleDateString()}` : ""}` : "Choose a plan below to start using DocuMind AI."}</p>
         </section>
-        {!loading && billing && !billing.mpesa_ready && <div className="admin-note billing-warning" role="status">M-Pesa checkout is not enabled yet. The platform administrator needs to finish Daraja configuration before members can pay.</div>}
-        <div className="admin-section-heading"><div><h2>{organizationId ? "Organization plan" : "Monthly plans"}</h2><p>Enter your M-Pesa number, choose a plan, then tap Pay with M-Pesa. A payment prompt will be sent to your phone to approve. Access starts after payment is confirmed.</p></div></div>
+        {!loading && billing && !billing.mpesa_ready && <div className="admin-note billing-warning" role="status">M-Pesa payments are not set up yet. Please contact support.</div>}
+        <div className="admin-section-heading"><div><h2>{organizationId ? "Team plan" : "Monthly plans"}</h2><p>Enter your M-Pesa number, choose a plan, then tap Pay with M-Pesa. Approve the payment request on your phone. Your plan starts after payment is confirmed.</p></div></div>
         <label className="billing-phone">M-Pesa phone number<input inputMode="tel" autoComplete="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="0712 345 678" /></label>
-        {organizationId && <label className="billing-phone">Subscription seats<input type="number" min={1} max={500} value={seatLimit} onChange={(event) => setSeatLimit(Math.max(1, Number(event.target.value)))} /><small>All current organization members need a seat.</small></label>}
+        {organizationId && <label className="billing-phone">People included in the plan<input type="number" min={1} max={500} value={seatLimit} onChange={(event) => setSeatLimit(Math.max(1, Number(event.target.value)))} /><small>Include everyone who needs access to this team.</small></label>}
         <div className="billing-plan-list">{plans.map((plan) => <article className="admin-plan-card" key={plan.id}><div><strong>{plan.name}</strong><p>{plan.description}</p><b>KSh {plan.price_kes.toLocaleString()} <small>/ {plan.duration_days} days</small></b></div><form onSubmit={(event) => void startPayment(event, plan.id)}><button className="admin-primary" type="submit" disabled={!billing?.mpesa_ready || !phone.trim() || !!busyPlanId}><CreditCard size={16} />{busyPlanId === plan.id ? "Sending prompt…" : "Pay with M-Pesa"}</button></form></article>)}</div>
-        {!loading && plans.length === 0 && <p className="admin-note billing-empty">No subscription plans are available yet.</p>}
+        {!loading && plans.length === 0 && <p className="admin-note billing-empty">No plans are available yet.</p>}
         <div className="admin-section-heading"><div><h2>Recent payments</h2><p>Pending prompts are not treated as successful payments.</p></div></div>
         <div className="admin-list">{billing?.payments.map((payment) => <article className="admin-row" key={payment.id}><div className="admin-row-main"><strong>KSh {payment.amount_kes.toLocaleString()} · {payment.status}</strong><small>{payment.mpesa_receipt ? `M-Pesa receipt ${payment.mpesa_receipt}` : payment.result_description || "Awaiting M-Pesa confirmation"}</small></div><time>{new Date(payment.created_at).toLocaleDateString()}</time></article>)}</div>
 
