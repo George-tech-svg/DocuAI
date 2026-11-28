@@ -10,6 +10,7 @@ from app.db.session import get_db
 from app.models.entities import Document, DocumentEvent, KnowledgeBase, NotificationPreference, Reminder, User
 from app.models.entities import OrganizationMember, WhatsAppLink
 from app.services.permissions import can, require
+from app.services.reminders import _create_reminders
 from app.schemas.events import EventEdit, NotificationPreferencesUpdate, SnoozeRequest
 
 router = APIRouter(tags=['Important dates'])
@@ -32,18 +33,6 @@ def _ensure_preferences(db: Session, user_id):
         db.add(pref)
         db.flush()
     return pref
-
-def _create_reminders(db: Session, event: DocumentEvent, pref: NotificationPreference):
-    db.query(Reminder).filter(Reminder.event_id == event.id, Reminder.status == 'scheduled').update({'status': 'cancelled'})
-    now = datetime.now(timezone.utc)
-    channels = pref.channels or {'in_app': True}
-    for days in sorted({int(value) for value in (pref.lead_days or [14, 7, 1]) if 0 <= int(value) <= 365}, reverse=True):
-        remind_at = event.due_at - timedelta(days=days)
-        if remind_at <= now:
-            continue
-        for channel in ('in_app', 'email', 'whatsapp'):
-            if channels.get(channel, channel == 'in_app'):
-                db.add(Reminder(event_id=event.id, user_id=event.user_id, channel=channel, remind_at=remind_at, status='scheduled'))
 
 @router.get('/documents/{document_id}/events')
 def document_events(document_id: UUID, user: User=Depends(current_user), db: Session=Depends(get_db)):

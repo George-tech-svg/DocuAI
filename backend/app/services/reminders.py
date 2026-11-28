@@ -68,6 +68,49 @@ class BirdWhatsAppChannel:
 
 CHANNELS: dict[str, NotificationChannel] = {'email': SMTPEmailChannel(), 'whatsapp': BirdWhatsAppChannel()}
 
+def _create_reminders(db: Session, event: DocumentEvent, pref: NotificationPreference) -> None:
+    """Create or refresh scheduled reminders without violating the unique key.
+
+    Cancelled rows remain in the database and still participate in the unique
+    constraint, so matching rows are reactivated instead of inserted again.
+    Sent reminders are kept as history and are not sent a second time.
+    """
+    now = datetime.now(timezone.utc)
+    channels = pref.channels or {'in_app': True}
+    desired: dict[tuple[str, datetime], None] = {}
+    for raw_days in pref.lead_days or [14, 7, 1]:
+        try:
+            days = int(raw_days)
+        except (TypeError, ValueError):
+            continue
+        if not 0 <= days <= 365:
+            continue
+        remind_at = event.due_at - timedelta(days=days)
+        if remind_at <= now:
+            continue
+        for channel in ('in_app', 'email', 'whatsapp'):
+            if channels.get(channel, channel == 'in_app'):
+                desired[(channel, remind_at)] = None
+
+    existing = db.scalars(select(Reminder).where(Reminder.event_id == event.id)).all()
+    for reminder in existing:
+        key = (reminder.channel, reminder.remind_at)
+        if key in desired:
+            desired.pop(key)
+            if reminder.status in {'cancelled', 'failed'}:
+                reminder.status = 'scheduled'
+                reminder.sent_at = None
+                reminder.error = None
+                reminder.next_attempt_at = None
+        elif reminder.status in {'scheduled', 'failed'}:
+            reminder.status = 'cancelled'
+            reminder.error = None
+            reminder.next_attempt_at = None
+
+    for channel, remind_at in desired:
+        db.add(Reminder(event_id=event.id, user_id=event.user_id, channel=channel,
+            remind_at=remind_at, status='scheduled'))
+
 def _quiet_end(now: datetime, preference: NotificationPreference) -> datetime | None:
     if not preference.quiet_start or not preference.quiet_end:
         return None
