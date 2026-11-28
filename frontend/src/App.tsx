@@ -173,6 +173,7 @@ export default function App() {
   const [token, setToken] = useState("");
   const [sessionChecking, setSessionChecking] = useState(true);
   const [consentRequired, setConsentRequired] = useState(false);
+  const [consentLoaded, setConsentLoaded] = useState(false);
   const [consentVersions, setConsentVersions] = useState({terms_version:"", privacy_version:""});
   const [consentBusy, setConsentBusy] = useState(false);
   const [privacyExports,setPrivacyExports]=useState<{id:string;status:string;error:string|null;created_at:string;expires_at:string|null;download_url:string|null}[]>([]);
@@ -251,7 +252,7 @@ export default function App() {
         setUserProfile(profile);
         setActivePage(profile.is_superuser ? "admin" : "workspace");
         return request<{required:boolean;terms_version:string;privacy_version:string}>("/privacy/consent/status")
-          .then((status) => { if (!cancelled) { setConsentRequired(status.required); setConsentVersions(status); } });
+          .then((status) => { if (!cancelled) { setConsentRequired(status.required); setConsentVersions(status); setConsentLoaded(true); } });
       })
       .catch(() => { if (!cancelled) setToken(""); })
       .finally(() => { if (!cancelled) setSessionChecking(false); });
@@ -259,11 +260,11 @@ export default function App() {
   }, []);
 
   useEffect(()=>{
-    if(!token)return;
+    if(!token || !consentLoaded || consentRequired)return;
     let cancelled=false;
     void request<{items:typeof privacyExports}>('/privacy/exports',token).then(result=>{if(!cancelled)setPrivacyExports(result.items);}).catch(()=>{});
     return()=>{cancelled=true;};
-  },[token]);
+  },[token, consentLoaded, consentRequired]);
 
   // Chat messages and current conversation.
   const [question, setQuestion] = useState("");
@@ -291,7 +292,7 @@ export default function App() {
 
   /** Load the current user's knowledge bases from the API. */
   async function refreshKnowledgeBases() {
-    if (!token) return;
+    if (!token || !consentLoaded || consentRequired) return;
 
     try {
       const response = await request<KnowledgeBaseListResponse>(
@@ -314,6 +315,7 @@ export default function App() {
 
   async function refreshOrganizations() {
     if (!token) { setOrganizations([]); setActiveOrganizationId(""); return; }
+    if (!consentLoaded || consentRequired) { setOrganizations([]); setActiveOrganizationId(""); return; }
     try {
       const result = await request<{ id: string; name: string; type: string; role: string }[]>("/organizations", token);
       setOrganizations(result);
@@ -332,16 +334,17 @@ export default function App() {
     const inviteToken = params.get("organization_invite");
     if (!inviteToken) { inviteHandled.current = false; return; }
     if (!token) { setSuccessMessage("You have an organization invitation. Sign in or create an account with the invited email to accept it."); return; }
+    if (!consentLoaded || consentRequired) return;
     if (inviteHandled.current) return;
     inviteHandled.current = true;
     void request<{ organization_id: string; message: string }>(`/organizations/invites/${encodeURIComponent(inviteToken)}/accept`, token, { method: "POST" })
       .then((result) => { setSuccessMessage(result.message); setActiveOrganizationId(result.organization_id); setActivePage("workspace"); void refreshOrganizations(); window.history.replaceState({}, "", window.location.pathname); })
       .catch((error) => setErrorMessage(getErrorMessage(error)));
-  }, [token]);
+  }, [token, consentLoaded, consentRequired]);
 
   /** Load saved conversations for the history panel. */
   async function refreshConversationHistory() {
-    if (!token) {
+    if (!token || !consentLoaded || consentRequired) {
       setConversationHistory([]);
       setHistoryLoaded(false);
       return;
@@ -360,7 +363,7 @@ export default function App() {
 
   /** Load documents belonging to the currently selected knowledge base. */
   async function refreshDocuments() {
-    if (!token || !selectedKnowledgeBaseId) {
+    if (!token || !consentLoaded || consentRequired || !selectedKnowledgeBaseId) {
       setDocuments([]);
       return;
     }
@@ -435,9 +438,9 @@ export default function App() {
     void refreshKnowledgeBases();
     setConversationHistory([]);
     setHistoryLoaded(false);
-  }, [token, activeOrganizationId]);
+  }, [token, activeOrganizationId, consentLoaded, consentRequired]);
 
-  useEffect(() => { void refreshOrganizations(); }, [token]);
+  useEffect(() => { void refreshOrganizations(); }, [token, consentLoaded, consentRequired]);
 
   useEffect(() => {
     if (!token) { setUserProfile(null); return; }
@@ -452,7 +455,7 @@ export default function App() {
     void refreshDocuments();
     setMessages([]);
     setConversationId(null);
-  }, [token, selectedKnowledgeBaseId]);
+  }, [token, selectedKnowledgeBaseId, consentLoaded, consentRequired]);
 
   async function openUploadPanel() {
     setUploadError("");
@@ -472,7 +475,7 @@ export default function App() {
     (document) => document.status === "pending" || document.status === "processing"
   );
   useEffect(() => {
-    if (!token || !selectedKnowledgeBaseId || !hasProcessingDocuments) return;
+    if (!token || !consentLoaded || consentRequired || !selectedKnowledgeBaseId || !hasProcessingDocuments) return;
     const timer = window.setInterval(async () => {
       try {
         const response = await request<DocumentListResponse>(
@@ -489,7 +492,7 @@ export default function App() {
       }
     }, 3_000);
     return () => window.clearInterval(timer);
-  }, [token, selectedKnowledgeBaseId, hasProcessingDocuments]);
+  }, [token, selectedKnowledgeBaseId, hasProcessingDocuments, consentLoaded, consentRequired]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -576,6 +579,7 @@ export default function App() {
       setTotpCode("");
       const consent = await request<{required:boolean;terms_version:string;privacy_version:string}>("/privacy/consent/status");
       setConsentRequired(consent.required); setConsentVersions(consent);
+      setConsentLoaded(true);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -604,6 +608,7 @@ export default function App() {
       setPassword("");
       setAdminSetupCode("");
       setConsentRequired(false);
+      setConsentLoaded(true);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -631,6 +636,7 @@ export default function App() {
       setTotpCode("");
       const consent = await request<{required:boolean;terms_version:string;privacy_version:string}>("/privacy/consent/status");
       setConsentRequired(consent.required); setConsentVersions(consent);
+      setConsentLoaded(true);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -643,6 +649,7 @@ export default function App() {
     try { await request("/auth/logout", token, {method:"POST"}); } catch { /* Clear local state even if the server is unreachable. */ }
     setToken("");
     setConsentRequired(false);
+    setConsentLoaded(false);
     setKnowledgeBases([]);
     setSelectedKnowledgeBaseId("");
     setSelectedDocumentId("");
