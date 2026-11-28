@@ -1,0 +1,9 @@
+﻿SYNTHETIC TEST FIXTURE - NOT A REAL RECEIPT
+
+Supplier: Sample Supplies Limited
+Supplier PIN: P000000000X
+Date: 14/06/2026
+Paper and pens: KSh 1,000.00
+VAT: KSh 160.00
+TOTAL: KSh 1,160.00
+Paid by: Cash

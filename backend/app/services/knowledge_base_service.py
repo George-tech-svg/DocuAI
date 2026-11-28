@@ -28,7 +28,8 @@ def create_knowledge_base(db: Session, user_id: UUID, data: KnowledgeBaseCreate)
         if not organization or not can(user, 'manage_folders', organization, db):
             raise KnowledgeBaseNotFoundError()
     kb = KnowledgeBase(user_id=user_id, organization_id=organization_id, name=data.name,
-        description=data.description, is_sensitive=getattr(data, 'is_sensitive', False))
+        description=data.description, is_sensitive=getattr(data, 'is_sensitive', False),
+        kind=getattr(data, 'kind', 'standard'))
     db.add(kb)
     db.flush()
     if organization_id:

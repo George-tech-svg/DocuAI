@@ -1,0 +1,9 @@
+﻿SYNTHETIC TEST FIXTURE - NOT A REAL TENDER
+
+Entity: Example County Training Board
+Closing date: 30 June 2026 at 10:00 EAT
+Submission: Upload one signed PDF through the sample portal.
+Eligibility: Current tax compliance certificate.
+Mandatory documents: Business registration certificate; signed tender form.
+Bid security: KSh 25,000.
+Evaluation: Mandatory compliance, technical score, then price.

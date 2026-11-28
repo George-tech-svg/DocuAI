@@ -678,3 +678,42 @@ This list is for review, not conclusions about what the law requires:
 
 Tests are provided for personal/organization export scope isolation, deletion failure/retry behavior, rate limiting, TOTP, and malformed upload rejection. Local dependency availability may limit running the complete suite; live Cloudinary cleanup, OAuth, email, database migration, and production cookie/CSRF behavior still require configured staging services.
 
+## Phase 8: business and KRA tools
+
+Phase 8 adds structured workflows over the existing indexed documents, official library, reminder system, and company vault. Results begin as **suggestions**. The user must review and confirm them before the app stores a receipt, tender checklist state, or generated deadline as a confirmed fact. All outputs are informational and should be checked against the original source.
+
+### KRA Notice Reader
+
+From **Business tools → KRA notice**, choose a ready indexed notice. The tool presents a plain-language explanation, the request, any printed amount/tax type, explicit deadlines, possible response options supported by retrieved library passages, a source-backed gather list, and an editable draft reply. Citations show the notice/library title, version where available, page and quoted excerpt. Action options are omitted unless a matching official library passage was retrieved; objection limits are never supplied from model memory. A deadline is suggested only when an exact date appears in its quoted evidence. The UI includes a tax/legal information-only disclaimer.
+
+### Tender Checker and Company Vault
+
+The checker extracts the tendering entity, deadline, submission method, eligibility, mandatory documents, bid security, and evaluation criteria with page citations. Members mark requirements they already have. The checker can suggest matching documents from a `company_vault` knowledge base; the member chooses and confirms matches. A confirmed tender deadline and selected vault item expiry dates enter the existing Phase 2 event/reminder service. The Company Vault is a special knowledge-base kind with document category and optional expiry date; it does not change the shared document indexing rules. The system does not submit a bid or certify eligibility.
+
+### Receipt and invoice capture
+
+Upload or photograph a readable receipt using the existing document upload flow, wait for indexing, and review the extracted supplier, visible supplier PIN, date, line items, VAT, total and payment method. The screen flags a missing visible supplier PIN, arithmetic mismatch, and likely duplicate. Correct fields before confirming. Confirmed entries appear in the receipt list and can be exported as CSV or Excel. A tool run can be downloaded as PDF or Excel. These checks only inspect visible text; they do not establish eTIMS validity or authenticate the supplier.
+
+### Read-only payroll check
+
+Upload a CSV or XLSX payroll sheet. The check runs locally in the API process using the provided gross-pay column and configured rate rows; the payroll file is not sent to the model provider, and no payroll values are saved as a business-tool run. Results identify arithmetic differences only and can be exported as PDF/XLSX. The admin rate editor manages effective-dated rates and source URLs. Migration `0021` seeds four generic **empty placeholders**; no statutory rate is hard-coded. A configured rate requires an effective start date and source URL. The administrator must verify rates and sources before use; these results are not a payroll or tax compliance ruling.
+
+### Data, APIs and deployment
+
+Migration `0021` adds `knowledge_bases.kind`, `business_tool_runs` (suggested structured output and retrieved source passages), `company_vault_items`, `business_receipts`, and `payroll_rates`. Apply it after `0020` before deploying this API. No new environment variable or external provider is required. The endpoints are under `/api/v1/tools` for KRA analysis, tender analysis, receipt analysis/list/export, run review/confirm/export, vault items, and payroll checks/exports; `/api/v1/admin/tools/payroll-rates` manages the rate catalogue. They use the existing login, central permission checks, document index, AI provider, audit events, and Phase 2 reminders.
+
+Uploads must first pass the existing upload limits and reach `ready`. PDF/TXT/DOCX/photo support depends on the deployed Phase 1 extractor/OCR configuration. Scanned notices and photos need successful OCR; review quoted text and page attribution carefully. The application validates Pydantic response schemas, source IDs and exact quoted excerpts, but this is not semantic proof that a conclusion follows from its quote. If evidence is missing or malformed, analysis fails visibly and should be retried with a clearer document.
+
+### Phase 8 deployment and review checklist
+
+- [ ] Back up the database and apply migration `0021` after `0020`; verify the migration head before deploying.
+- [ ] Confirm `Business tools` appears for members and the payroll rate editor is admin-only.
+- [ ] Analyze synthetic KRA, tender, and receipt fixtures; inspect every quote/page and verify unsupported claims are omitted.
+- [ ] Confirm no KRA options appear without official library evidence; confirm no inferred objection period appears.
+- [ ] Confirm deadline and expiry events are created only after explicit review/confirmation and reminders honor Phase 2 preferences.
+- [ ] Confirm a receipt is absent from the saved list before confirmation, appears after confirmation, and exports to CSV/XLSX.
+- [ ] Confirm payroll rates begin empty, an unconfigured placeholder creates no legal-rate assertion, and no payroll upload is sent to DeepSeek or persisted as a tool result.
+- [ ] Review the app's displays and PDF/XLSX exports for the information-only disclaimers and source attribution.
+
+Unit tests and synthetic fixtures are in `backend/tests/test_business_tools.py` and `backend/tests/fixtures/business_tools/`. A local syntax compile and migration-head check are not substitutes for a live PostgreSQL migration, configured model call, OCR run, reminder delivery, or production browser review.
+

@@ -9,6 +9,7 @@ class KnowledgeBaseCreate(BaseModel):
     description: str | None = Field(default=None, max_length=2000)
     organization_id: UUID | None = None
     is_sensitive: bool = False
+    kind: str = Field(default='standard', pattern=r'^(standard|company_vault)$')
 
 class KnowledgeBaseUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=150)
@@ -16,6 +17,7 @@ class KnowledgeBaseUpdate(BaseModel):
     is_archived: bool | None = None
     is_pinned: bool | None = None
     is_sensitive: bool | None = None
+    kind: str | None = Field(default=None, pattern=r'^(standard|company_vault)$')
 
 class KnowledgeBaseResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -27,6 +29,7 @@ class KnowledgeBaseResponse(BaseModel):
     is_archived: bool = False
     is_pinned: bool = False
     is_sensitive: bool = False
+    kind: str = 'standard'
     organization_id: UUID | None = None
     user_id: UUID
 

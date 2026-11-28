@@ -39,6 +39,7 @@ class KnowledgeBase(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
     organization_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('organizations.id', ondelete='CASCADE'), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(150))
+    kind: Mapped[str] = mapped_column(String(30), default='standard', server_default='standard')
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
@@ -508,3 +509,64 @@ class WhatsAppDocumentUpload(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
     notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+class BusinessToolRun(Base):
+    __tablename__ = 'business_tool_runs'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uid)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('organizations.id', ondelete='SET NULL'), nullable=True, index=True)
+    document_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('documents.id', ondelete='CASCADE'), nullable=True, index=True)
+    tool_type: Mapped[str] = mapped_column(String(30), index=True)
+    status: Mapped[str] = mapped_column(String(20), default='suggested', server_default='suggested', index=True)
+    output_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    sources_json: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+class VaultItem(Base):
+    __tablename__ = 'company_vault_items'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uid)
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('documents.id', ondelete='CASCADE'), unique=True, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('organizations.id', ondelete='CASCADE'), nullable=True, index=True)
+    category: Mapped[str] = mapped_column(String(80), default='other')
+    display_name: Mapped[str] = mapped_column(String(220))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+class ReceiptRecord(Base):
+    __tablename__ = 'business_receipts'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uid)
+    tool_run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('business_tool_runs.id', ondelete='CASCADE'), unique=True, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('organizations.id', ondelete='CASCADE'), nullable=True, index=True)
+    source_document_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('documents.id', ondelete='SET NULL'), nullable=True)
+    supplier: Mapped[str | None] = mapped_column(String(220), nullable=True)
+    supplier_pin: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    receipt_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    line_items: Mapped[list] = mapped_column(JSONB, default=list)
+    vat_amount: Mapped[object | None] = mapped_column(Numeric(14, 2), nullable=True)
+    total_amount: Mapped[object | None] = mapped_column(Numeric(14, 2), nullable=True)
+    payment_method: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    flags: Mapped[list] = mapped_column(JSONB, default=list)
+    fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+class PayrollRate(Base):
+    __tablename__ = 'payroll_rates'
+    __table_args__ = (UniqueConstraint('code', 'effective_from', name='uq_payroll_rate_code_start'),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uid)
+    code: Mapped[str] = mapped_column(String(60), index=True)
+    display_name: Mapped[str] = mapped_column(String(160))
+    rate_value: Mapped[object | None] = mapped_column(Numeric(12, 6), nullable=True)
+    rate_kind: Mapped[str] = mapped_column(String(16), default='percentage', server_default='percentage')
+    tolerance_amount: Mapped[object] = mapped_column(Numeric(12, 2), default=0, server_default='0')
+    effective_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)

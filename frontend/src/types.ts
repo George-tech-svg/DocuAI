@@ -6,6 +6,7 @@ export interface KnowledgeBase {
   is_archived: boolean;
   is_pinned: boolean;
   is_sensitive?: boolean;
+  kind?: "standard" | "company_vault";
   organization_id?: string | null;
   user_id?: string;
 }

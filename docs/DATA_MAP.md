@@ -8,7 +8,7 @@ This engineering inventory is based on the SQLAlchemy models and migrations in t
 |---|---|---|
 | `users` | Name, email, password hash or linked-login state, verification/admin flags, language preference, TOTP secret | Account and access. Deleted by account deletion after dependent content cleanup. |
 | `privacy_consents` | User reference, notice type/version, acceptance time | Evidence of notice acceptance; user reference becomes null on account deletion. Retention period needs operator/legal decision. |
-| `knowledge_bases` | Folder name/description, personal owner or organization, sensitive flag | User document workspace. Personal folders cascade with account deletion; organization folders remain with the organization. |
+| `knowledge_bases` | Folder name/description, personal owner or organization, sensitive flag, kind (`standard` or `company_vault`) | User document workspace. Personal folders cascade with account deletion; organization folders remain with the organization. |
 | `documents` | Filename, MIME type, byte count, processing status/errors, uploader reference, storage identifiers/URL | Upload/index lifecycle. Original is stored in Cloudinary; rows and vectors are removed on deletion/retention. |
 | `document_chunks` | Extracted document passages, page, embedding vector | Search and chat retrieval. Cascades with its document. |
 | `conversations` | Owner, folder/document/library scope, title, visibility, timestamps | Chat history. Private chats are personal; shared chats belong to the organization workspace. |
@@ -17,6 +17,10 @@ This engineering inventory is based on the SQLAlchemy models and migrations in t
 | `document_events` | Extracted dates/obligations, source excerpts, confidence, status, user and organization | User reminders and event review. Follows related data cleanup. |
 | `reminders` | Event, user, channel, schedule, delivery status and error | Reminder delivery. Cascades with the event/user according to schema. |
 | `notification_preferences` | User channels, lead times, quiet hours, timezone | Reminder delivery preferences. Removed with the account. |
+| `business_tool_runs` | User/organization/document references, suggested or confirmed structured KRA/tender/receipt output, retrieved source passages and timestamps | Stores human-reviewed business-tool results and evidence. Cascades with user/document; organization reference is nullable. Stored passages can include personal or business document content. |
+| `company_vault_items` | Document/user/organization references, category, display name, expiry date | Index of company standard documents used for tender matching and expiry reminders. Cascades with the document, user, or organization. Original file and extracted chunks remain in document storage tables. |
+| `business_receipts` | User/organization/tool-run references, supplier, visible PIN/date, items, VAT, total, payment method, duplicate fingerprint | User-confirmed receipt fields and visible-content flags. Cascades with user; organization link nullable. Does not certify eTIMS status. |
+| `payroll_rates` | Rate code/name, optional value and effective dates, source URL, notes, editor reference | Admin-managed payroll check configuration. Migration seeds empty placeholders only. A populated rate is not automatically verified as current or legally applicable. |
 
 ## Organization and financial records
 

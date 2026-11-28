@@ -4,4 +4,5 @@ from app.models.entities import (
     DocumentEvent, Reminder, NotificationPreference,
     LibraryCollection, LibraryDocument, LibraryChunk, LibraryUpdate,
     Organization, OrganizationMember, OrganizationInvite, AuditEvent,
+    BusinessToolRun, VaultItem, ReceiptRecord, PayrollRate,
 )

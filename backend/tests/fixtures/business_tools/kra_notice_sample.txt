@@ -1,0 +1,6 @@
+﻿SYNTHETIC TEST FIXTURE - NOT A REAL KRA NOTICE
+
+Reference: DEMO-0001
+This training-only notice asks the sample business to provide its VAT return for the period ending 31 January 2026 by 15 March 2026.
+Amount shown: KSh 12,500.00.
+For this fixture, the user may contact the issuing office to ask for clarification.

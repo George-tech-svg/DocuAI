@@ -3,6 +3,7 @@ import type { ChangeEvent, CSSProperties, FormEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   BookOpen,
+  Briefcase,
   Archive,
   ChevronDown,
   ChevronLeft,
@@ -43,6 +44,7 @@ import { downloadAnswerPdf, downloadConversationPdf, downloadConversationsPdf } 
 const LibraryPage = lazy(() => import("./LibraryPage"));
 const OrganizationsPage = lazy(() => import("./OrganizationsPage"));
 const DataProcessingPage = lazy(() => import("./DataProcessingPage"));
+const BusinessToolsPage = lazy(() => import("./BusinessToolsPage"));
 import type {
   AuthenticationResponse,
   ChatMessage,
@@ -176,7 +178,7 @@ export default function App() {
   const [privacyExports,setPrivacyExports]=useState<{id:string;status:string;error:string|null;created_at:string;expires_at:string|null;download_url:string|null}[]>([]);
   const [privacyExportBusy,setPrivacyExportBusy]=useState(false);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [activePage, setActivePage] = useState<"workspace" | "admin" | "billing" | "settings" | "upcoming" | "library" | "organizations" | "data-processing">("workspace");
+  const [activePage, setActivePage] = useState<"workspace" | "admin" | "billing" | "settings" | "upcoming" | "library" | "organizations" | "data-processing" | "tools">("workspace");
   const [legalPage, setLegalPage] = useState<"terms" | "privacy" | null>(null);
   const [isRegistering, setIsRegistering] = useState(false);
   const [fullName, setFullName] = useState("");
@@ -1335,6 +1337,7 @@ export default function App() {
   if (activePage === "organizations") return <Suspense fallback={<div className="app-loading" role="status">Loading organizations…</div>}><OrganizationsPage token={token} selectedId={activeOrganizationId} onSelect={(id) => { setActiveOrganizationId(id); void refreshOrganizations(); }} onBack={() => { void refreshOrganizations(); setActivePage("workspace"); }} onBilling={(id) => { setBillingOrganizationId(id); setActivePage("billing"); }} /></Suspense>;
   if (activePage === "billing") return <Suspense fallback={<div className="app-loading" role="status">Loading billing…</div>}><BillingPage token={token} organizationId={billingOrganizationId} onBack={() => setActivePage(billingOrganizationId ? "organizations" : "workspace")} /></Suspense>;
   if (activePage === "upcoming") return <Suspense fallback={<div className="app-loading" role="status">Loading important dates…</div>}><ImportantDates token={token} upcoming onBack={() => setActivePage("workspace")} /></Suspense>;
+  if (activePage === "tools") return <Suspense fallback={<div className="app-loading" role="status">Loading business tools…</div>}><BusinessToolsPage token={token} isAdmin={!!userProfile?.is_superuser} onBack={() => setActivePage("workspace")} /></Suspense>;
 
   const visibleKnowledgeBases = knowledgeBases.filter((knowledgeBase) => (knowledgeBase.organization_id ?? "") === activeOrganizationId);
   const selectedKnowledgeBase = visibleKnowledgeBases.find(
@@ -1586,6 +1589,9 @@ export default function App() {
           <div className="workspace-label"><ShieldCheck size={16} /> Private workspace</div>
           <button type="button" onClick={() => { setActivePage("upcoming"); setIsMobileSidebarOpen(false); }}>
             <CalendarDays size={17} /> Upcoming dates
+          </button>
+          <button type="button" onClick={() => { setActivePage("tools"); setIsMobileSidebarOpen(false); }}>
+            <Briefcase size={17} /> Business tools
           </button>
           <button type="button" onClick={() => { setActivePage("billing"); setIsMobileSidebarOpen(false); }}>
             <CreditCard size={17} /> Plan &amp; billing
