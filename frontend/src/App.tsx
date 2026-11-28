@@ -1593,32 +1593,37 @@ export default function App() {
         </nav>
 
         <div className="sidebottom">
-          <div className="workspace-label"><ShieldCheck size={16} /> Private workspace</div>
-          <button type="button" onClick={() => { setActivePage("upcoming"); setIsMobileSidebarOpen(false); }}>
-            <CalendarDays size={17} /> Upcoming dates
-          </button>
-          <button type="button" onClick={() => { setActivePage("tools"); setIsMobileSidebarOpen(false); }}>
-            <Briefcase size={17} /> Business tools
-          </button>
-          <button type="button" onClick={() => { setActivePage("billing"); setIsMobileSidebarOpen(false); }}>
-            <CreditCard size={17} /> Plan &amp; billing
-          </button>
-          <button type="button" onClick={() => { setActivePage("settings"); setIsMobileSidebarOpen(false); }}>
-            <SettingsIcon size={17} /> Account settings
-          </button>
-          {userProfile?.is_superuser && (
-            <button type="button" onClick={() => { setActivePage("admin"); setIsMobileSidebarOpen(false); }}>
-              <ShieldCheck size={17} /> Admin console
-            </button>
-          )}
-          <button onClick={handleLogout}>
-            <LogOut size={17} /> Sign out
-          </button>
-          <div className="sidebar-legal-links">
-            <button type="button" onClick={() => openLegalPage("terms")}>Terms</button>
-            <span aria-hidden="true">·</span>
-            <button type="button" onClick={() => openLegalPage("privacy")}>Privacy</button>
-          </div>
+          <details className="sidebar-more">
+            <summary><MoreVertical size={17} /> More</summary>
+            <div className="sidebar-more-content">
+              <div className="workspace-label"><ShieldCheck size={16} /> Private workspace</div>
+              <button type="button" onClick={() => { setActivePage("upcoming"); setIsMobileSidebarOpen(false); }}>
+                <CalendarDays size={17} /> Upcoming dates
+              </button>
+              <button type="button" onClick={() => { setActivePage("tools"); setIsMobileSidebarOpen(false); }}>
+                <Briefcase size={17} /> Business tools
+              </button>
+              <button type="button" onClick={() => { setActivePage("billing"); setIsMobileSidebarOpen(false); }}>
+                <CreditCard size={17} /> Plan &amp; billing
+              </button>
+              <button type="button" onClick={() => { setActivePage("settings"); setIsMobileSidebarOpen(false); }}>
+                <SettingsIcon size={17} /> Account settings
+              </button>
+              {userProfile?.is_superuser && (
+                <button type="button" onClick={() => { setActivePage("admin"); setIsMobileSidebarOpen(false); }}>
+                  <ShieldCheck size={17} /> Admin console
+                </button>
+              )}
+              <button type="button" onClick={handleLogout}>
+                <LogOut size={17} /> Sign out
+              </button>
+              <div className="sidebar-legal-links">
+                <button type="button" onClick={() => openLegalPage("terms")}>Terms</button>
+                <span aria-hidden="true">·</span>
+                <button type="button" onClick={() => openLegalPage("privacy")}>Privacy</button>
+              </div>
+            </div>
+          </details>
         </div>
       </aside>
 
