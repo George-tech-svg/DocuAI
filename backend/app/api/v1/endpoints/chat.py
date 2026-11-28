@@ -27,6 +27,7 @@ from app.services.trusted_answers import trusted_answer
 from app.services.permissions import can
 from app.models.entities import AuditEvent, LibraryCollection, LibraryDocument, LibraryChunk, KnowledgeBase, OrganizationMember, AnswerFeedback
 from app.services.security_controls import enforce_rate_limit
+from app.services.user_guide import GUIDE_CONTEXT, GUIDE_PASSAGES, is_guide_question
 from sqlalchemy import literal_column
 router = APIRouter(tags=['Chat'])
 logger = logging.getLogger(__name__)
@@ -107,6 +108,43 @@ def _load_follow_up_context(user_id, data: ChatRequest):
             .limit(8)
         ).all()
         return [{'role': item.role, 'content': item.content} for item in reversed(recent)]
+
+
+def _prepare_guide_chat(user_id, data: ChatRequest):
+    """Validate the selected chat location before answering from the guide."""
+    with sessionmaker(bind=get_engine())() as db:
+        knowledge_base_id, document_id, conversation, library_collection_id = _resolve_scope(db, user_id, data)
+        return knowledge_base_id, document_id, conversation.id if conversation else None, library_collection_id
+
+
+async def _answer_guide_chat(user: User, data: ChatRequest, language: str, translation_target: str | None):
+    knowledge_base_id, document_id, conversation_id, library_collection_id = await run_in_threadpool(
+        _prepare_guide_chat, user.id, data
+    )
+    answer, supported = await trusted_answer(
+        data.question, GUIDE_CONTEXT, GUIDE_PASSAGES, language=language,
+        strict_grounding=True, translation_target=translation_target,
+    )
+    source = Source(filename="DocuMind user guide", excerpt="Step-by-step help for files, folders, teams, public documents, chats, tools, and privacy.")
+    confidence_score = 1.0 if supported else 0.0
+    answer_metadata = {
+        'answer_language': language,
+        'confidence_score': confidence_score,
+        'confidence_label': 'Strong match' if supported else 'Weak match',
+        'search_query': 'DocuMind user guide',
+        'model_version': get_settings().DEEPSEEK_MODEL,
+    }
+    saved_conversation_id, assistant_message_id = await run_in_threadpool(
+        _save_chat, user.id, knowledge_base_id, document_id, library_collection_id,
+        data.scope_type, data.visibility, conversation_id, data.question,
+        'DocuMind user guide', answer, [source], answer_metadata,
+    )
+    return ChatResponse(
+        answer=answer, conversation_id=saved_conversation_id,
+        assistant_message_id=assistant_message_id, sources=[source],
+        answer_language=language, confidence_score=confidence_score,
+        confidence_label=answer_metadata['confidence_label'], search_query='DocuMind user guide',
+    )
 
 def _prepare_chat(user_id, data: ChatRequest, search_query, query_vector):
     """Run chat authorization and retrieval in one worker-owned DB session."""
@@ -241,6 +279,11 @@ async def chat(data: ChatRequest, user: User=Depends(current_user), db: Session=
     enforce_rate_limit(db, 'chat-user', str(user.id), 40, 60)
     started = perf_counter()
     try:
+        if is_guide_question(data.question):
+            language = requested_language(data.question, user.answer_language or 'auto')
+            return await _answer_guide_chat(
+                user, data, language, requested_translation_language(data.question)
+            )
         stage_started = perf_counter()
         recent_messages = await run_in_threadpool(_load_follow_up_context, user.id, data)
         search_query = await rewrite_follow_up_question(data.question, recent_messages)

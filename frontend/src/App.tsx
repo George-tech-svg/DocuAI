@@ -20,6 +20,7 @@ import {
   Pin,
   MessageCircle,
   Plus,
+  Search,
   Send,
   Settings as SettingsIcon,
   ShieldCheck,
@@ -33,6 +34,7 @@ import {
 
 import { getErrorMessage, request } from "./api";
 import AssistantMessage from "./AssistantMessage";
+import WorkspaceFinder, { type ChatSearchHit, type FileSearchHit } from "./WorkspaceFinder";
 const AdminDashboard = lazy(() => import("./AdminDashboard"));
 const BillingPage = lazy(() => import("./BillingPage"));
 const TermsPrivacy = lazy(() => import("./TermsPrivacy"));
@@ -236,6 +238,12 @@ export default function App() {
   });
   const [openItemMenuId, setOpenItemMenuId] = useState<string | null>(null);
   const [isHelpPanelOpen, setIsHelpPanelOpen] = useState(false);
+  const [isFinderOpen, setIsFinderOpen] = useState(false);
+  const [initialFinderQuery, setInitialFinderQuery] = useState<string | null>(null);
+  const [guideQuestion, setGuideQuestion] = useState("");
+  const [guideAnswer, setGuideAnswer] = useState("");
+  const [guideError, setGuideError] = useState("");
+  const [guideBusy, setGuideBusy] = useState(false);
   const [newKnowledgeBaseName, setNewKnowledgeBaseName] = useState("");
   const [newKnowledgeBaseSensitive, setNewKnowledgeBaseSensitive] = useState(false);
   const [conversationHistory, setConversationHistory] = useState<ConversationRecord[]>([]);
@@ -744,12 +752,63 @@ export default function App() {
       setConversationId(conversation.id);
       setIsMobileSidebarOpen(false);
       if (conversation.knowledge_base_id) await recordOrganizationExport("conversation", conversation.id, conversation.knowledge_base_id);
-      await downloadConversationPdf(conversation.title, saved);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
       setIsBusy(false);
     }
+  }
+
+  function openFoundFile(hit: FileSearchHit) {
+    if (!hit.file_id || !hit.folder_id) return;
+    clearCurrentConversation();
+    setActivePage("workspace");
+    setActiveOrganizationId(hit.organization_id ?? "");
+    setSelectedKnowledgeBaseId(hit.folder_id);
+    setSelectedDocumentId(hit.file_id);
+    setChatScope("document");
+    setExpandedKnowledgeBaseIds((previous) => new Set(previous).add(hit.folder_id!));
+    setExpandedDocumentIds((previous) => new Set(previous).add(hit.file_id!));
+    setIsFinderOpen(false);
+    setInitialFinderQuery(null);
+  }
+
+  function openFoundPublicDocument(hit: FileSearchHit) {
+    if (!hit.collection_id) return;
+    clearCurrentConversation();
+    setActivePage("workspace");
+    setActiveOrganizationId("");
+    setSelectedKnowledgeBaseId("");
+    setSelectedDocumentId("");
+    setLibraryCollectionId(hit.collection_id);
+    setChatScope("library");
+    setIsFinderOpen(false);
+    setInitialFinderQuery(null);
+  }
+
+  function openFoundChat(hit: ChatSearchHit) {
+    const conversation: ConversationRecord = {
+      id: hit.id,
+      title: hit.title,
+      knowledge_base_id: hit.folder_id,
+      document_id: hit.document_id,
+      scope_type: hit.scope_type,
+      library_collection_id: hit.library_collection_id ?? null,
+      visibility: hit.visibility,
+      created_at: hit.created_at,
+      is_archived: hit.is_archived,
+      is_pinned: false,
+    };
+    setActivePage("workspace");
+    setActiveOrganizationId(hit.organization_id ?? "");
+    setIsFinderOpen(false);
+    setInitialFinderQuery(null);
+    void handleOpenConversation(conversation);
+  }
+
+  function closeFinder() {
+    setIsFinderOpen(false);
+    setInitialFinderQuery(null);
   }
 
   /** Download a history item without first navigating into it. */
@@ -785,6 +844,19 @@ export default function App() {
     setQuestion(prompt);
     setIsHelpPanelOpen(false);
     window.setTimeout(() => questionInputRef.current?.focus(), 0);
+  }
+
+  async function askGuideQuestion(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (guideQuestion.trim().length < 2 || guideBusy) return;
+    setGuideBusy(true); setGuideError(""); setGuideAnswer("");
+    try {
+      const result = await request<{ answer: string }>("/help/ask", token, {
+        method: "POST", body: JSON.stringify({ question: guideQuestion.trim() }),
+      });
+      setGuideAnswer(result.answer);
+    } catch (error) { setGuideError(getErrorMessage(error)); }
+    finally { setGuideBusy(false); }
   }
 
   function clearCurrentConversation() {
@@ -1081,6 +1153,13 @@ export default function App() {
   /** Send a question and display the AI answer with its document sources. */
   async function handleSendQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!question.trim() || isBusy) return;
+    const discoveryQuestion = question.trim();
+    const asksToFindSomething = /\b(find|locate|search)\b.{0,100}\b(file|files|document|documents|chat|chats|conversation|conversations|folder|folders)\b|\b(which|where)\b.{0,80}\b(file|document|chat|conversation|folder)\b|\b(list|show me|what)\b.{0,60}\b(files|documents|chats|conversations)\b|\b(old chat|past chat|chat history|previous conversation)\b/i.test(discoveryQuestion);
+    if (asksToFindSomething) {
+      setQuestion(""); setErrorMessage(""); setInitialFinderQuery(discoveryQuestion); setIsFinderOpen(true);
+      return;
+    }
     const readyFolderDocuments = documents.filter((document) => document.status === "ready");
     if (["folder", "folder_library"].includes(chatScope) && !selectedKnowledgeBaseId) {
       setErrorMessage("Please select a folder before starting a chat.");
@@ -1361,6 +1440,7 @@ export default function App() {
     ? !!selectedKnowledgeBaseId && readyFolderDocuments.length > 0
     : !!selectedDocumentId && selectedDocument?.status === "ready";
   const examplePrompts = [
+    { label: "Find a file or old chat", prompt: "Find the file that mentions a payment deadline." },
     { label: "Prepare a teaching pack", prompt: "Using only the selected document, prepare a practical teacher-ready lesson pack. Include: topic and learning objectives (mark anything the source does not specify as 'Teacher to fill in'), a brief lesson sequence, a clear explanation with examples, one activity requiring few or no special materials, practice at support/standard/challenge levels, a short formative quiz with answer key, and likely misconceptions with follow-up suggestions. Cite source numbers like [1] beside claims. Keep it clear, printable, and easy to adapt. Do not invent curriculum requirements." },
     { label: "Make a teaching summary", prompt: "Create a clear teaching summary of this document: main ideas, learning objectives only where stated, key terms, worked examples, and a short recap. Use plain language and cite source numbers like [1]." },
     { label: "Create learner practice", prompt: "Create a short practice sheet from this document with questions at three difficulty levels, then provide a separate answer key with source citations. Do not introduce facts outside the document." },
@@ -1661,6 +1741,7 @@ export default function App() {
             </div>
             <div className="chat-actions">
               <span className="pill">{documents.length} file{documents.length === 1 ? "" : "s"}</span>
+              <button className="chat-tool-button" type="button" onClick={() => { setInitialFinderQuery(null); setIsFinderOpen(true); }} title="Find files or chats" aria-label="Find files or chats"><Search size={17} /></button>
               <button className="chat-tool-button" type="button" onClick={handleNewChat} title="New chat" aria-label="Start a new chat" disabled={isBusy || !hasValidChatScope}>
                 <Plus size={17} />
               </button>
@@ -1813,7 +1894,7 @@ export default function App() {
               ref={questionInputRef}
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
-              placeholder={chatScope === "folder" && selectedKnowledgeBase ? "Ask a question across this folder…" : selectedDocumentId ? "Ask a question about the selected file…" : "Ask a question (choose a file first)…"}
+              placeholder={chatScope === "library" ? "Ask about public documents…" : chatScope === "folder_library" ? "Ask about this folder and public documents…" : chatScope === "folder" && selectedKnowledgeBase ? "Ask a question across this folder…" : selectedDocumentId ? "Ask a question about the selected file…" : "Ask a question, or find a file or chat…"}
               disabled={isBusy}
             />
             <button disabled={isBusy || !question.trim() || !hasValidChatScope} aria-label="Send question">
@@ -1834,6 +1915,15 @@ export default function App() {
               <button className="icon-button" type="button" aria-label="Close help" onClick={() => setIsHelpPanelOpen(false)}><X size={19} /></button>
             </div>
             <div className="help-panel-content">
+              <h3>Ask how to use the app</h3>
+              <form className="guide-question-form" onSubmit={(event) => void askGuideQuestion(event)}>
+                <input value={guideQuestion} onChange={(event) => setGuideQuestion(event.target.value)} placeholder="For example: what is a team?" maxLength={1500} />
+                <button type="submit" className="admin-primary" disabled={guideBusy || guideQuestion.trim().length < 2}>{guideBusy ? "Thinking…" : "Ask"}</button>
+              </form>
+              {guideError && <p className="admin-error" role="alert">{guideError}</p>}
+              {guideBusy && <p role="status">Reading the user guide…</p>}
+              {guideAnswer && <div className="guide-answer" aria-live="polite"><AssistantMessage content={guideAnswer} /><small>Based on the <a href="/user-guide.md" target="_blank" rel="noreferrer">DocuMind user guide</a>.</small></div>}
+              <p><a className="guide-manual-link" href="/user-guide.md" target="_blank" rel="noreferrer">Read the full user guide</a></p>
               <h3>Try an example</h3>
               {examplePrompts.map((example) => (
                 <button className="help-example" key={example.label} type="button" onClick={() => chooseExamplePrompt(example.prompt)}>
@@ -1928,6 +2018,14 @@ export default function App() {
           </section>
         </div>
       )}
+      {isFinderOpen && <WorkspaceFinder
+        token={token}
+        initialQuery={initialFinderQuery}
+        onClose={closeFinder}
+        onOpenFile={openFoundFile}
+        onOpenPublicDocument={openFoundPublicDocument}
+        onOpenChat={openFoundChat}
+      />}
     </div>
   );
 }

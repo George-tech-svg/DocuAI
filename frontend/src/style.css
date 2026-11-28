@@ -1343,6 +1343,45 @@ nav button.selected, .folder-tree .folder-file-row:hover:not(:disabled), .folder
 .data-processing-page .settings-detail > p span { color:#475569; }
 .retention-policy label { display:grid; gap:6px; max-width:360px; margin:12px 0; color:#334155; font-weight:650; }
 .retention-policy input { min-height:42px; padding:8px 11px; border:1px solid #cbd5e1; border-radius:8px; background:#fff; color:#1f2937; }
+.finder-backdrop { position:fixed; inset:0; z-index:55; display:grid; place-items:center; overflow:auto; padding:max(14px,env(safe-area-inset-top)) 14px max(14px,env(safe-area-inset-bottom)); background:#152c3dcc; }
+.finder-panel { display:flex; flex-direction:column; gap:14px; width:min(760px,100%); max-height:min(88dvh,900px); overflow:hidden; padding:22px; border:1px solid #cad7df; border-radius:16px; background:#f6f8f5; color:#263f50; box-shadow:0 20px 70px #10263d55; }
+.finder-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.finder-heading h2 { display:flex; align-items:center; gap:9px; margin:0; color:#24465f; font-size:21px; }
+.finder-heading p { margin:6px 0 0; color:#627681; font-size:13px; }
+.finder-form { display:flex; gap:9px; }
+.finder-form input, .guide-question-form input { flex:1; min-width:0; min-height:44px; padding:10px 12px; border:1px solid #c8d6df; border-radius:9px; background:#fff; color:#24394b; font:inherit; }
+.finder-form button { flex:0 0 auto; min-width:95px; }
+.finder-filters { display:flex; gap:7px; }
+.finder-filters button { min-height:34px; padding:6px 11px; border:1px solid #cbd9df; border-radius:8px; background:#fff; color:#526a79; font-size:12px; font-weight:700; }
+.finder-filters button.selected { border-color:#8bb5cf; background:#e3f0f6; color:#245f85; }
+.finder-results { min-height:0; overflow:auto; overscroll-behavior:contain; }
+.finder-results section { display:grid; gap:7px; margin:4px 0 16px; }
+.finder-results h3 { margin:0 0 2px; color:#315b47; font-size:15px; }
+.finder-result { display:flex; align-items:flex-start; gap:10px; width:100%; min-width:0; padding:11px 12px; border:1px solid #dce4e5; border-radius:9px; background:#fff; color:#314c5c; text-align:left; }
+.finder-result:hover { border-color:#9dbbc9; background:#f4f9fa; }
+.finder-result > svg { flex:0 0 auto; margin-top:2px; color:#5f8295; }
+.finder-result > span, .finder-public-result > span { display:grid; gap:4px; min-width:0; }
+.finder-result strong { color:#27475c; font-size:13px; overflow-wrap:anywhere; }
+.finder-result small { color:#61737c; font-size:11px; line-height:1.45; overflow-wrap:anywhere; }
+.finder-public-result { cursor:default; }
+.finder-result-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:3px; }
+.finder-result-actions a, .finder-result-actions button, .guide-manual-link { border:0; padding:0; background:transparent; color:#286fa9; font-size:12px; font-weight:700; text-decoration:underline; text-underline-offset:2px; }
+.finder-empty, .finder-status { margin:2px 0; padding:14px; border-radius:9px; background:#eaf0ed; color:#526875; line-height:1.5; }
+.finder-privacy-note { margin:0; color:#74828a; font-size:11px; }
+.guide-question-form { display:flex; gap:7px; margin:7px 0 12px; }
+.guide-question-form button { min-width:70px; }
+.guide-answer { margin:9px 0; padding:12px; border:1px solid #d8e2df; border-radius:9px; background:#fff; color:#405c68; font-size:13px; line-height:1.5; }
+.guide-answer p { margin:4px 0 8px; }
+.guide-answer small { color:#70817e; }
+.guide-manual-link { display:inline-block; margin-bottom:14px; }
+@media(max-width:600px) {
+  .finder-backdrop { place-items:start center; padding:8px 8px max(8px,env(safe-area-inset-bottom)); }
+  .finder-panel { width:100%; max-height:calc(100dvh - 16px); padding:15px; border-radius:13px; }
+  .finder-heading h2 { font-size:18px; }
+  .finder-form { align-items:stretch; }
+  .finder-form button { min-width:76px; padding:8px; }
+  .finder-result { padding:9px; }
+}
 @media(max-width:620px) {
  .privacy-consent-screen { padding:12px; align-items:start; }
  .privacy-consent-card { margin:12px 0; }
