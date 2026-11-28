@@ -8,6 +8,9 @@ class DocumentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     knowledge_base_id: UUID
+    uploaded_by_user_id: UUID | None = None
+    uploaded_by_name: str | None = None
+    uploaded_by_email: str | None = None
     original_filename: str
     content_type: str
     file_size_bytes: int

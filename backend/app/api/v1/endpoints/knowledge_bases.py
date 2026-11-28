@@ -12,7 +12,8 @@ router = APIRouter(prefix='/knowledge-bases', tags=['Knowledge Bases'])
 
 @router.post('', response_model=KnowledgeBaseResponse, status_code=201)
 def create(data: KnowledgeBaseCreate, user: User=Depends(subscribed_user), db: Session=Depends(get_db)):
-    return create_knowledge_base(db, user.id, data)
+    try: return create_knowledge_base(db, user.id, data)
+    except KnowledgeBaseNotFoundError: raise HTTPException(404, 'Organization not found or you cannot create folders there.')
 
 @router.get('', response_model=KnowledgeBaseListResponse)
 def listing(user: User=Depends(current_user), db: Session=Depends(get_db)):

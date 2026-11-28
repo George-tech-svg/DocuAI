@@ -1,3 +1,5 @@
+from io import BytesIO
+from PIL import Image
 from app.services.chunking import chunk_pages
 from app.services.file_validation import validate_upload
 from fastapi import HTTPException
@@ -11,8 +13,11 @@ def test_validate_txt():
     assert validate_upload('notes.txt', b'hello', 10) == ('notes.txt', 'text/plain')
 
 def test_validate_supported_photo_signature():
-    assert validate_upload('photo.jpg', b'\xff\xd8\xffphoto', 10) == ('photo.jpg', 'image/jpeg')
-    assert validate_upload('photo.png', b'\x89PNG\r\n\x1a\nphoto', 10) == ('photo.png', 'image/png')
+    jpg, png = BytesIO(), BytesIO()
+    Image.new('RGB', (4, 4), 'white').save(jpg, format='JPEG')
+    Image.new('RGB', (4, 4), 'white').save(png, format='PNG')
+    assert validate_upload('photo.jpg', jpg.getvalue(), 10) == ('photo.jpg', 'image/jpeg')
+    assert validate_upload('photo.png', png.getvalue(), 10) == ('photo.png', 'image/png')
 
 def test_configured_upload_limit_is_applied():
     try:

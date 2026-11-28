@@ -30,6 +30,8 @@ class PlanResponse(BaseModel):
 class CheckoutRequest(BaseModel):
     plan_id: UUID
     phone_number: str = Field(min_length=9, max_length=16)
+    organization_id: UUID | None = None
+    seat_limit: int | None = Field(default=None, ge=1, le=500)
 
 class PaymentRecoveryCreate(BaseModel):
     phone_number: str = Field(min_length=9, max_length=16)

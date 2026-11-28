@@ -24,11 +24,13 @@ class UserRegistrationRequest(UserRegister):
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+    totp_code: str | None = Field(default=None, min_length=6, max_length=8)
 
 class GoogleLoginRequest(BaseModel):
     credential: str = Field(min_length=20, max_length=8192)
     mode: Literal["login", "register"]
     accept_terms: bool = False
+    totp_code: str | None = Field(default=None, min_length=6, max_length=8)
 
 class AdminBootstrapRequest(BaseModel):
     full_name: str = Field(min_length=2, max_length=150)
@@ -52,6 +54,10 @@ class UserResponse(BaseModel):
     is_active: bool
     is_superuser: bool = False
     created_at: datetime
+    answer_language: Literal['auto', 'en', 'sw'] = 'auto'
+
+class AnswerLanguageUpdate(BaseModel):
+    answer_language: Literal['auto', 'en', 'sw']
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -59,5 +65,4 @@ class TokenResponse(BaseModel):
 
 class AuthResponse(BaseModel):
     user: UserResponse
-    access_token: str
-    token_type: str = 'bearer'
+    access_token: str | None = None

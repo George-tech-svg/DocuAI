@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import current_user
 from app.db.session import get_db
 from app.models.entities import Document, DocumentEvent, KnowledgeBase, NotificationPreference, Reminder, User
+from app.models.entities import OrganizationMember, WhatsAppLink
+from app.services.permissions import can, require
 from app.schemas.events import EventEdit, NotificationPreferencesUpdate, SnoozeRequest
 
 router = APIRouter(tags=['Important dates'])
@@ -17,9 +19,9 @@ def _event_view(event: DocumentEvent, document: Document):
         'kind': event.kind, 'title': event.title, 'due_at': event.due_at, 'source_page': event.source_page,
         'source_excerpt': event.source_excerpt, 'confidence': event.confidence, 'status': event.status}
 
-def _owned_event(db: Session, user_id, event_id: UUID):
-    event = db.scalar(select(DocumentEvent).where(DocumentEvent.id == event_id, DocumentEvent.user_id == user_id))
-    if not event:
+def _owned_event(db: Session, user: User, event_id: UUID, action='manage_folders'):
+    event = db.get(DocumentEvent, event_id)
+    if not event or not can(user, action, event, db):
         raise HTTPException(404, 'Important date not found.')
     return event
 
@@ -39,24 +41,26 @@ def _create_reminders(db: Session, event: DocumentEvent, pref: NotificationPrefe
         remind_at = event.due_at - timedelta(days=days)
         if remind_at <= now:
             continue
-        for channel in ('in_app', 'email'):
+        for channel in ('in_app', 'email', 'whatsapp'):
             if channels.get(channel, channel == 'in_app'):
                 db.add(Reminder(event_id=event.id, user_id=event.user_id, channel=channel, remind_at=remind_at, status='scheduled'))
 
 @router.get('/documents/{document_id}/events')
 def document_events(document_id: UUID, user: User=Depends(current_user), db: Session=Depends(get_db)):
-    document = db.scalar(select(Document).join(KnowledgeBase).where(Document.id == document_id, KnowledgeBase.user_id == user.id))
-    if not document:
+    document = db.get(Document, document_id)
+    kb = db.get(KnowledgeBase, document.knowledge_base_id) if document else None
+    if not document or not kb or not can(user, 'read', document, db):
         raise HTTPException(404, 'Document not found.')
     events = db.scalars(select(DocumentEvent).where(DocumentEvent.document_id == document.id).order_by(DocumentEvent.due_at)).all()
     return {'items': [_event_view(event, document) for event in events]}
 
 @router.get('/events/upcoming')
 def upcoming_events(user: User=Depends(current_user), db: Session=Depends(get_db)):
+    member_orgs = select(OrganizationMember.organization_id).where(OrganizationMember.user_id == user.id)
     rows = db.execute(select(DocumentEvent, Document).join(Document, Document.id == DocumentEvent.document_id)
-        .where(DocumentEvent.user_id == user.id, DocumentEvent.status.in_(['suggested', 'confirmed']))
+        .where(((DocumentEvent.user_id == user.id) | DocumentEvent.organization_id.in_(member_orgs)), DocumentEvent.status.in_(['suggested', 'confirmed']))
         .order_by(DocumentEvent.due_at).limit(200)).all()
-    return {'items': [_event_view(event, document) for event, document in rows]}
+    return {'items': [_event_view(event, document) for event, document in rows if can(user, 'read', event, db)]}
 
 @router.get('/notifications')
 def in_app_notifications(user: User=Depends(current_user), db: Session=Depends(get_db)):
@@ -71,7 +75,7 @@ def in_app_notifications(user: User=Depends(current_user), db: Session=Depends(g
 
 @router.post('/events/{event_id}/confirm')
 def confirm_event(event_id: UUID, data: EventEdit, user: User=Depends(current_user), db: Session=Depends(get_db)):
-    event = _owned_event(db, user.id, event_id)
+    event = _owned_event(db, user, event_id)
     if event.status in {'dismissed', 'done'}:
         raise HTTPException(409, 'This date is no longer available to confirm.')
     event.title, event.kind = data.title.strip(), data.kind
@@ -85,14 +89,14 @@ def confirm_event(event_id: UUID, data: EventEdit, user: User=Depends(current_us
 
 @router.post('/events/{event_id}/dismiss', status_code=204)
 def dismiss_event(event_id: UUID, user: User=Depends(current_user), db: Session=Depends(get_db)):
-    event = _owned_event(db, user.id, event_id)
+    event = _owned_event(db, user, event_id)
     event.status = 'dismissed'
     db.query(Reminder).filter(Reminder.event_id == event.id, Reminder.status.in_(['scheduled', 'failed'])).update({'status': 'cancelled'})
     db.commit()
 
 @router.post('/events/{event_id}/done', status_code=204)
 def mark_event_done(event_id: UUID, user: User=Depends(current_user), db: Session=Depends(get_db)):
-    event = _owned_event(db, user.id, event_id)
+    event = _owned_event(db, user, event_id)
     event.status = 'done'
     db.query(Reminder).filter(Reminder.event_id == event.id, Reminder.status.in_(['scheduled', 'failed'])).update({'status': 'cancelled'})
     db.commit()
@@ -117,7 +121,7 @@ def snooze_reminder(reminder_id: UUID, data: SnoozeRequest, user: User=Depends(c
 
 @router.post('/events/{event_id}/snooze')
 def snooze_event(event_id: UUID, data: SnoozeRequest, user: User=Depends(current_user), db: Session=Depends(get_db)):
-    event = _owned_event(db, user.id, event_id)
+    event = _owned_event(db, user, event_id, 'read')
     if event.status != 'confirmed':
         raise HTTPException(409, 'Confirm this date before snoozing its reminder.')
     reminder = db.scalar(select(Reminder).where(Reminder.event_id == event.id, Reminder.user_id == user.id, Reminder.status.in_(['scheduled', 'failed'])).order_by(Reminder.remind_at).limit(1))
@@ -135,7 +139,7 @@ def snooze_event(event_id: UUID, data: SnoozeRequest, user: User=Depends(current
 
 @router.get('/events/{event_id}/ics')
 def export_event_ics(event_id: UUID, user: User=Depends(current_user), db: Session=Depends(get_db)):
-    event = _owned_event(db, user.id, event_id)
+    event = _owned_event(db, user, event_id)
     document = db.get(Document, event.document_id)
     def escape(value: str):
         return value.replace('\\', '\\\\').replace(';', '\\;').replace(',', '\\,').replace('\n', '\\n').replace('\r', '')
@@ -168,7 +172,11 @@ def update_notification_preferences(data: NotificationPreferencesUpdate, user: U
             except ValueError as exc:
                 raise HTTPException(422, 'Quiet hours must use 24-hour HH:MM time.') from exc
     pref = _ensure_preferences(db, user.id)
-    pref.channels = {key: bool(value) for key, value in data.channels.items() if key in {'email', 'in_app'}}
+    pref.channels = {key: bool(value) for key, value in data.channels.items() if key in {'email', 'in_app', 'whatsapp'}}
+    if pref.channels.get('whatsapp'):
+        link = db.get(WhatsAppLink, user.id)
+        if not link or not link.active or not link.opted_in_at or link.opted_out_at:
+            raise HTTPException(422, 'Link and opt in to WhatsApp in Settings before enabling WhatsApp reminders.')
     pref.channels.setdefault('in_app', True)
     pref.lead_days = sorted(set(data.lead_days), reverse=True)
     pref.quiet_start, pref.quiet_end, pref.timezone = data.quiet_start, data.quiet_end, data.timezone

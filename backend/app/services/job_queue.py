@@ -17,6 +17,18 @@ def enqueue_index_document(db: Session, document_id: UUID) -> Job:
     db.flush()
     return job
 
+def enqueue_library_ingest(db: Session, library_document_id: UUID, force: bool = False) -> Job:
+    job = Job(type='ingest_library_document', payload={'library_document_id': str(library_document_id), 'force': force})
+    db.add(job)
+    db.flush()
+    return job
+
+def enqueue_library_update(db: Session, collection_id: UUID, previous_document_id: UUID | None, new_document_id: UUID, change_kind: str) -> Job:
+    job = Job(type='record_library_update', payload={'collection_id': str(collection_id), 'previous_document_id': str(previous_document_id) if previous_document_id else None, 'new_document_id': str(new_document_id), 'change_kind': change_kind})
+    db.add(job)
+    db.flush()
+    return job
+
 def enqueue_extract_events(db: Session, document_id: UUID) -> Job | None:
     exists = db.scalar(select(Job.id).where(Job.type == 'extract_events', Job.payload['document_id'].astext == str(document_id), Job.status.in_(['queued', 'running', 'done'])).limit(1))
     if exists:
@@ -133,7 +145,16 @@ def fail_job(db: Session, job_id: UUID, worker_id: str, safe_error: str, now: da
 
 
 def _set_document_failure(db: Session, job: Job, message: str) -> None:
-    if job.type != 'index_document':
+    if getattr(job, 'type', None) == 'ingest_library_document':
+        from app.models.entities import LibraryDocument
+        payload = job.payload if isinstance(job.payload, dict) else {}
+        library_document = db.get(LibraryDocument, payload.get('library_document_id')) if payload.get('library_document_id') else None
+        if library_document:
+            library_document.status = 'failed'
+            library_document.processing_error = message[:500]
+            library_document.updated_at = datetime.now(timezone.utc)
+        return
+    if getattr(job, 'type', None) != 'index_document':
         return
     document_id = job.payload.get('document_id') if isinstance(job.payload, dict) else None
     if not document_id:

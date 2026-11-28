@@ -17,6 +17,7 @@ from app.services.file_validation import validate_upload
 from app.services.storage import delete_file, store_file
 from app.services.job_queue import enqueue_index_document
 from app.core.config import max_upload_mb
+from app.models.entities import AuditEvent, KnowledgeBase
 router = APIRouter(prefix='/knowledge-bases/{kb_id}/documents', tags=['Documents'])
 
 class DocumentUpdate(BaseModel):
@@ -29,7 +30,7 @@ async def upload(kb_id: UUID, file: UploadFile=File(...), user: User=Depends(sub
     data = await file.read(max_bytes + 1)
     if len(data) > max_bytes:
         raise HTTPException(413, f'File is too large. Maximum size is {max_upload_mb()}MB.')
-    owned_kb(db, user.id, kb_id)
+    owned_kb(db, user.id, kb_id, 'upload')
     name, mime = validate_upload(file.filename or '', data, max_upload_mb())
     try:
         stored = await run_in_threadpool(store_file, name, data)
@@ -37,6 +38,7 @@ async def upload(kb_id: UUID, file: UploadFile=File(...), user: User=Depends(sub
         raise HTTPException(502, 'The original file could not be saved. Please check your connection and try again.') from exc
     doc = Document(
         knowledge_base_id=kb_id,
+        uploaded_by_user_id=user.id,
         original_filename=name,
         content_type=mime,
         file_size_bytes=len(data),
@@ -51,6 +53,9 @@ async def upload(kb_id: UUID, file: UploadFile=File(...), user: User=Depends(sub
         db.add(doc)
         db.flush()
         enqueue_index_document(db, doc.id)
+        kb = db.get(KnowledgeBase, kb_id)
+        if kb and kb.organization_id:
+            db.add(AuditEvent(organization_id=kb.organization_id, actor_user_id=user.id, action='document_uploaded', resource_type='document', resource_id=str(doc.id), details={'filename': name}))
         db.commit()
     except Exception as exc:
         db.rollback()
@@ -75,25 +80,28 @@ def listing(kb_id: UUID, user: User=Depends(current_user), db: Session=Depends(g
 
 @router.get('/{doc_id}/status', response_model=DocumentStatusResponse)
 def status(kb_id: UUID, doc_id: UUID, user: User=Depends(current_user), db: Session=Depends(get_db)):
-    d = owned_document(db, user.id, kb_id, doc_id)
+    d = owned_document(db, user.id, kb_id, doc_id, 'read')
     db.refresh(d)
     return DocumentStatusResponse(document_id=d.id, status=d.status, progress_stage=d.progress_stage, page_count=d.page_count, chunk_count=d.chunk_count, processing_error=d.processing_error, processed_at=d.processed_at, ocr_used=d.ocr_used, ocr_confidence=d.ocr_confidence, low_ocr_confidence=d.ocr_used and (d.ocr_confidence is None or d.ocr_confidence < 60))
 
 @router.delete('/{doc_id}', status_code=204)
 def delete(kb_id: UUID, doc_id: UUID, user: User=Depends(current_user), db: Session=Depends(get_db)):
-    d = owned_document(db, user.id, kb_id, doc_id)
+    d = owned_document(db, user.id, kb_id, doc_id, 'manage_folders')
     if d.cloudinary_public_id:
         try:
             delete_file(d.cloudinary_public_id, d.cloudinary_resource_type or 'raw')
         except Exception as exc:
             raise HTTPException(502, 'Could not delete the original file from Cloudinary; document metadata was kept') from exc
     db.query(Conversation).filter(Conversation.document_id == doc_id).delete(synchronize_session=False)
+    kb = d.knowledge_base
+    if kb and kb.organization_id:
+        db.add(AuditEvent(organization_id=kb.organization_id, actor_user_id=user.id, action='document_deleted', resource_type='document', resource_id=str(doc_id), details={'filename': d.original_filename}))
     db.delete(d)
     db.commit()
 
 @router.patch('/{doc_id}', response_model=DocumentResponse)
 def update_document(kb_id: UUID, doc_id: UUID, data: DocumentUpdate, user: User=Depends(current_user), db: Session=Depends(get_db)):
-    document = owned_document(db, user.id, kb_id, doc_id)
+    document = owned_document(db, user.id, kb_id, doc_id, 'manage_folders')
     for key, value in data.model_dump(exclude_unset=True).items():
         if value is not None:
             setattr(document, key, value)

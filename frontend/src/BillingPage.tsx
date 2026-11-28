@@ -4,7 +4,7 @@ import { ArrowLeft, CheckCircle2, CreditCard, RefreshCw } from "lucide-react";
 import { getErrorMessage, request } from "./api";
 
 type Plan = { id: string; name: string; description: string; price_kes: number; duration_days: number };
-type Billing = { subscription: { plan_name: string; status: string; expires_at: string | null } | null; payments: { id: string; amount_kes: number; status: string; mpesa_receipt: string | null; result_description: string | null; created_at: string }[]; mpesa_ready: boolean };
+type Billing = { subscription: { plan_name: string; status: string; expires_at: string | null } | null; payments: { id: string; amount_kes: number; status: string; mpesa_receipt: string | null; result_description: string | null; created_at: string }[]; mpesa_ready: boolean; organization_member_count?: number; organization_seat_limit?: number | null };
 type RecoveryRequest = { id: string; phone_number: string; paid_at: string; mpesa_message: string; status: string; rejection_reason: string | null; created_at: string; reviewed_at: string | null };
 
 function localDateTimeValue() {
@@ -13,7 +13,7 @@ function localDateTimeValue() {
   return now.toISOString().slice(0, 16);
 }
 
-export default function BillingPage({ token, onBack }: { token: string; onBack: () => void }) {
+export default function BillingPage({ token, onBack, organizationId = null }: { token: string; onBack: () => void; organizationId?: string | null }) {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [billing, setBilling] = useState<Billing | null>(null);
   const [phone, setPhone] = useState("");
@@ -26,6 +26,7 @@ export default function BillingPage({ token, onBack }: { token: string; onBack: 
   const [paidAt, setPaidAt] = useState(localDateTimeValue);
   const [mpesaMessage, setMpesaMessage] = useState("");
   const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [seatLimit, setSeatLimit] = useState(1);
 
   async function refresh() {
     setError("");
@@ -33,11 +34,14 @@ export default function BillingPage({ token, onBack }: { token: string; onBack: 
     try {
       const [availablePlans, current, requests] = await Promise.all([
         request<Plan[]>("/billing/plans", token),
-        request<Billing>("/billing/me", token),
+        organizationId
+          ? Promise.all([request<{ subscription: { plan_name: string; status: string; expires_at: string | null } | null; member_count: number; seat_limit: number | null }>(`/organizations/${organizationId}/billing`, token), request<Billing>("/billing/me", token)]).then(([org, personal]) => ({ ...personal, subscription: org.subscription, organization_member_count: org.member_count, organization_seat_limit: org.seat_limit }))
+          : request<Billing>("/billing/me", token),
         request<RecoveryRequest[]>("/billing/payment-recovery", token),
       ]);
       setPlans(availablePlans);
       setBilling(current);
+      if (organizationId) setSeatLimit(Math.max(current.organization_member_count ?? 1, current.organization_seat_limit ?? current.organization_member_count ?? 1));
       setRecoveryRequests(requests);
     } catch (e) { setError(getErrorMessage(e)); }
     finally { setLoading(false); }
@@ -50,7 +54,7 @@ export default function BillingPage({ token, onBack }: { token: string; onBack: 
     setBusyPlanId(planId); setError(""); setMessage("");
     try {
       const response = await request<{ customer_message: string }>("/billing/checkout", token, {
-        method: "POST", body: JSON.stringify({ plan_id: planId, phone_number: phone }),
+        method: "POST", body: JSON.stringify({ plan_id: planId, phone_number: phone, ...(organizationId ? { organization_id: organizationId, seat_limit: seatLimit } : {}) }),
       });
       setMessage(response.customer_message || "Approve the M-Pesa prompt on your phone. Your plan begins once the payment is confirmed.");
       await refresh();
@@ -94,8 +98,9 @@ export default function BillingPage({ token, onBack }: { token: string; onBack: 
           <p>{billing?.subscription ? `${billing.subscription.status}${billing.subscription.expires_at ? ` · valid through ${new Date(billing.subscription.expires_at).toLocaleDateString()}` : ""}` : "Choose a plan below to start using DocuMind AI."}</p>
         </section>
         {!loading && billing && !billing.mpesa_ready && <div className="admin-note billing-warning" role="status">M-Pesa checkout is not enabled yet. The platform administrator needs to finish Daraja configuration before members can pay.</div>}
-        <div className="admin-section-heading"><div><h2>Monthly plans</h2><p>Enter your M-Pesa number, choose a plan, then tap Pay with M-Pesa. A payment prompt will be sent to your phone to approve. Access starts after payment is confirmed.</p></div></div>
+        <div className="admin-section-heading"><div><h2>{organizationId ? "Organization plan" : "Monthly plans"}</h2><p>Enter your M-Pesa number, choose a plan, then tap Pay with M-Pesa. A payment prompt will be sent to your phone to approve. Access starts after payment is confirmed.</p></div></div>
         <label className="billing-phone">M-Pesa phone number<input inputMode="tel" autoComplete="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="0712 345 678" /></label>
+        {organizationId && <label className="billing-phone">Subscription seats<input type="number" min={1} max={500} value={seatLimit} onChange={(event) => setSeatLimit(Math.max(1, Number(event.target.value)))} /><small>All current organization members need a seat.</small></label>}
         <div className="billing-plan-list">{plans.map((plan) => <article className="admin-plan-card" key={plan.id}><div><strong>{plan.name}</strong><p>{plan.description}</p><b>KSh {plan.price_kes.toLocaleString()} <small>/ {plan.duration_days} days</small></b></div><form onSubmit={(event) => void startPayment(event, plan.id)}><button className="admin-primary" type="submit" disabled={!billing?.mpesa_ready || !phone.trim() || !!busyPlanId}><CreditCard size={16} />{busyPlanId === plan.id ? "Sending prompt…" : "Pay with M-Pesa"}</button></form></article>)}</div>
         {!loading && plans.length === 0 && <p className="admin-note billing-empty">No subscription plans are available yet.</p>}
         <div className="admin-section-heading"><div><h2>Recent payments</h2><p>Pending prompts are not treated as successful payments.</p></div></div>

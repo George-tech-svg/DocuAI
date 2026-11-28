@@ -25,15 +25,24 @@ export async function request<T>(
   token = "",
   options: RequestInit = {}
 ): Promise<T> {
+  void token; // Auth is an HttpOnly cookie; never attach a browser-readable JWT.
   const headers = new Headers(options.headers);
   const isFileUpload = options.body instanceof FormData;
+  const method = (options.method ?? "GET").toUpperCase();
 
   if (options.body && !isFileUpload) {
     headers.set("Content-Type", "application/json");
   }
 
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
+  if (!['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(method)) {
+    let csrf = document.cookie.split('; ').find((part) => part.startsWith('documind_csrf='))?.split('=').slice(1).join('=');
+    if (!csrf) {
+      const csrfResponse = await fetch(`${API_BASE_URL}/auth/csrf`, { credentials: 'include' });
+      if (!csrfResponse.ok) throw new Error('Could not verify this request. Refresh the page and try again.');
+      const body = await csrfResponse.json() as { csrf_token?: string };
+      csrf = body.csrf_token;
+    }
+    if (csrf) headers.set('X-CSRF-Token', decodeURIComponent(csrf));
   }
 
   const controller = new AbortController();
@@ -62,6 +71,7 @@ export async function request<T>(
     const response = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
       headers,
+      credentials: 'include',
       signal: controller.signal,
     });
 

@@ -23,6 +23,9 @@ import {
   Settings as SettingsIcon,
   ShieldCheck,
   Trash2,
+  ThumbsUp,
+  ThumbsDown,
+  Flag,
   Upload,
   X,
 } from "lucide-react";
@@ -34,7 +37,12 @@ const BillingPage = lazy(() => import("./BillingPage"));
 const TermsPrivacy = lazy(() => import("./TermsPrivacy"));
 const GoogleSignIn = lazy(() => import("./GoogleSignIn"));
 const ImportantDates = lazy(() => import("./ImportantDates"));
+const WhatsAppSettings = lazy(() => import("./WhatsAppSettings"));
+const AnswerLanguageSettings = lazy(() => import("./AnswerLanguageSettings"));
 import { downloadAnswerPdf, downloadConversationPdf, downloadConversationsPdf } from "./pdfExport";
+const LibraryPage = lazy(() => import("./LibraryPage"));
+const OrganizationsPage = lazy(() => import("./OrganizationsPage"));
+const DataProcessingPage = lazy(() => import("./DataProcessingPage"));
 import type {
   AuthenticationResponse,
   ChatMessage,
@@ -160,16 +168,21 @@ function ItemActionMenu({ label, open, onToggle, onClose, items }: {
 /** The main application: sign in, manage documents, and chat with them. */
 export default function App() {
   // Authentication form and saved session.
-  const [token, setToken] = useState(
-    localStorage.getItem("documind_token") ?? ""
-  );
+  const [token, setToken] = useState("");
+  const [sessionChecking, setSessionChecking] = useState(true);
+  const [consentRequired, setConsentRequired] = useState(false);
+  const [consentVersions, setConsentVersions] = useState({terms_version:"", privacy_version:""});
+  const [consentBusy, setConsentBusy] = useState(false);
+  const [privacyExports,setPrivacyExports]=useState<{id:string;status:string;error:string|null;created_at:string;expires_at:string|null;download_url:string|null}[]>([]);
+  const [privacyExportBusy,setPrivacyExportBusy]=useState(false);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [activePage, setActivePage] = useState<"workspace" | "admin" | "billing" | "settings" | "upcoming">("workspace");
+  const [activePage, setActivePage] = useState<"workspace" | "admin" | "billing" | "settings" | "upcoming" | "library" | "organizations" | "data-processing">("workspace");
   const [legalPage, setLegalPage] = useState<"terms" | "privacy" | null>(null);
   const [isRegistering, setIsRegistering] = useState(false);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [totpCode, setTotpCode] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false);
   const [adminBootstrapAvailable, setAdminBootstrapAvailable] = useState(false);
@@ -202,6 +215,9 @@ export default function App() {
 
   // Knowledge bases and documents in the selected workspace.
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
+  const [organizations, setOrganizations] = useState<{ id: string; name: string; type: string; role: string }[]>([]);
+  const [activeOrganizationId, setActiveOrganizationId] = useState("");
+  const [billingOrganizationId, setBillingOrganizationId] = useState<string | null>(null);
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("");
   const [selectedDocumentId, setSelectedDocumentId] = useState("");
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
@@ -218,15 +234,42 @@ export default function App() {
   const [openItemMenuId, setOpenItemMenuId] = useState<string | null>(null);
   const [isHelpPanelOpen, setIsHelpPanelOpen] = useState(false);
   const [newKnowledgeBaseName, setNewKnowledgeBaseName] = useState("");
+  const [newKnowledgeBaseSensitive, setNewKnowledgeBaseSensitive] = useState(false);
   const [conversationHistory, setConversationHistory] = useState<ConversationRecord[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+
+  useEffect(() => {
+    localStorage.removeItem('documind_token');
+    let cancelled = false;
+    void request<UserProfile>("/auth/me")
+      .then((profile) => {
+        if (cancelled) return;
+        setToken("cookie-session");
+        setUserProfile(profile);
+        setActivePage(profile.is_superuser ? "admin" : "workspace");
+        return request<{required:boolean;terms_version:string;privacy_version:string}>("/privacy/consent/status")
+          .then((status) => { if (!cancelled) { setConsentRequired(status.required); setConsentVersions(status); } });
+      })
+      .catch(() => { if (!cancelled) setToken(""); })
+      .finally(() => { if (!cancelled) setSessionChecking(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(()=>{
+    if(!token)return;
+    let cancelled=false;
+    void request<{items:typeof privacyExports}>('/privacy/exports',token).then(result=>{if(!cancelled)setPrivacyExports(result.items);}).catch(()=>{});
+    return()=>{cancelled=true;};
+  },[token]);
 
   // Chat messages and current conversation.
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const [chatScope, setChatScope] = useState<"document" | "folder">("folder");
+  const [chatScope, setChatScope] = useState<"document" | "folder" | "library" | "folder_library">("folder");
+  const [libraryCollectionId, setLibraryCollectionId] = useState<string | null>(null);
+  const [conversationVisibility, setConversationVisibility] = useState<"private" | "shared">("private");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const questionInputRef = useRef<HTMLInputElement>(null);
 
@@ -255,17 +298,44 @@ export default function App() {
       );
 
       setKnowledgeBases(response.items);
+      const visible = response.items.filter((knowledgeBase) => (knowledgeBase.organization_id ?? "") === activeOrganizationId);
       setSelectedKnowledgeBaseId((previousId) => {
-        const previousStillExists = response.items.some(
+        const previousStillExists = visible.some(
           (knowledgeBase) => knowledgeBase.id === previousId
         );
-
-        return previousStillExists ? previousId : response.items[0]?.id ?? "";
+        return previousStillExists ? previousId : visible[0]?.id ?? "";
       });
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
   }
+
+  async function refreshOrganizations() {
+    if (!token) { setOrganizations([]); setActiveOrganizationId(""); return; }
+    try {
+      const result = await request<{ id: string; name: string; type: string; role: string }[]>("/organizations", token);
+      setOrganizations(result);
+      setActiveOrganizationId((current) => result.some((org) => org.id === current) ? current : "");
+    } catch (error) { setErrorMessage(getErrorMessage(error)); }
+  }
+
+  async function recordOrganizationExport(resourceType: string, resourceId: string, knowledgeBaseId: string | null) {
+    const folder = knowledgeBases.find((item) => item.id === knowledgeBaseId);
+    if (folder?.organization_id) await request(`/organizations/${folder.organization_id}/exports`, token, { method: "POST", body: JSON.stringify({ resource_type: resourceType, resource_id: resourceId }) });
+  }
+
+  const inviteHandled = useRef(false);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const inviteToken = params.get("organization_invite");
+    if (!inviteToken) { inviteHandled.current = false; return; }
+    if (!token) { setSuccessMessage("You have an organization invitation. Sign in or create an account with the invited email to accept it."); return; }
+    if (inviteHandled.current) return;
+    inviteHandled.current = true;
+    void request<{ organization_id: string; message: string }>(`/organizations/invites/${encodeURIComponent(inviteToken)}/accept`, token, { method: "POST" })
+      .then((result) => { setSuccessMessage(result.message); setActiveOrganizationId(result.organization_id); setActivePage("workspace"); void refreshOrganizations(); window.history.replaceState({}, "", window.location.pathname); })
+      .catch((error) => setErrorMessage(getErrorMessage(error)));
+  }, [token]);
 
   /** Load saved conversations for the history panel. */
   async function refreshConversationHistory() {
@@ -363,7 +433,9 @@ export default function App() {
     void refreshKnowledgeBases();
     setConversationHistory([]);
     setHistoryLoaded(false);
-  }, [token]);
+  }, [token, activeOrganizationId]);
+
+  useEffect(() => { void refreshOrganizations(); }, [token]);
 
   useEffect(() => {
     if (!token) { setUserProfile(null); return; }
@@ -475,7 +547,7 @@ export default function App() {
       const endpoint = isRegistering ? "/auth/register" : "/auth/login";
       const credentials = isRegistering
         ? { full_name: fullName.trim(), email: email.trim(), password, accept_terms: hasAcceptedTerms }
-        : { email: email.trim(), password };
+        : { email: email.trim(), password, totp_code: totpCode || undefined };
 
       const response = await request<AuthenticationResponse>(endpoint, "", {
         method: "POST",
@@ -495,11 +567,13 @@ export default function App() {
         setPassword("");
         return;
       }
-      localStorage.setItem("documind_token", response.access_token);
-      setToken(response.access_token);
+      setToken("cookie-session");
       setUserProfile(response.user);
       setActivePage(response.user.is_superuser ? "admin" : "workspace");
       setPassword("");
+      setTotpCode("");
+      const consent = await request<{required:boolean;terms_version:string;privacy_version:string}>("/privacy/consent/status");
+      setConsentRequired(consent.required); setConsentVersions(consent);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -521,13 +595,13 @@ export default function App() {
         method: "POST",
         body: JSON.stringify({ full_name: fullName, email, password, setup_code: adminSetupCode, accept_terms: hasAcceptedTerms }),
       });
-      localStorage.setItem("documind_token", response.access_token);
       setAdminBootstrapAvailable(false);
-      setToken(response.access_token);
+      setToken("cookie-session");
       setUserProfile(response.user);
       setActivePage("admin");
       setPassword("");
       setAdminSetupCode("");
+      setConsentRequired(false);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -546,13 +620,15 @@ export default function App() {
     try {
       const response = await request<AuthenticationResponse>("/auth/google", "", {
         method: "POST",
-        body: JSON.stringify({ credential, mode, accept_terms: acceptedTerms }),
+        body: JSON.stringify({ credential, mode, accept_terms: acceptedTerms, totp_code:totpCode || undefined }),
       });
-      localStorage.setItem("documind_token", response.access_token);
-      setToken(response.access_token);
+      setToken("cookie-session");
       setUserProfile(response.user);
       setActivePage(response.user.is_superuser ? "admin" : "workspace");
       setPassword("");
+      setTotpCode("");
+      const consent = await request<{required:boolean;terms_version:string;privacy_version:string}>("/privacy/consent/status");
+      setConsentRequired(consent.required); setConsentVersions(consent);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -561,9 +637,10 @@ export default function App() {
   }
 
   /** Clear all user-specific data when signing out. */
-  function handleLogout() {
-    localStorage.removeItem("documind_token");
+  async function handleLogout() {
+    try { await request("/auth/logout", token, {method:"POST"}); } catch { /* Clear local state even if the server is unreachable. */ }
     setToken("");
+    setConsentRequired(false);
     setKnowledgeBases([]);
     setSelectedKnowledgeBaseId("");
     setSelectedDocumentId("");
@@ -578,6 +655,31 @@ export default function App() {
     setActivePage("workspace");
     setLegalPage(null);
     setErrorMessage("");
+  }
+
+  async function acceptCurrentNotices() {
+    setConsentBusy(true); setErrorMessage("");
+    try {
+      await request('/privacy/consent', token, {method:'POST', body:JSON.stringify({accept_terms:true,accept_privacy:true})});
+      setConsentRequired(false); setSuccessMessage('Current Terms and Privacy Notice accepted.');
+    } catch (error) { setErrorMessage(getErrorMessage(error)); }
+    finally { setConsentBusy(false); }
+  }
+
+  async function refreshPrivacyExports(){
+    const result=await request<{items:typeof privacyExports}>('/privacy/exports',token);
+    setPrivacyExports(result.items);
+  }
+  async function requestPersonalExport(){
+    setPrivacyExportBusy(true);setErrorMessage('');setSuccessMessage('');
+    try{const created=await request<{id:string;message:string}>('/privacy/exports',token,{method:'POST'});setSuccessMessage(created.message);await refreshPrivacyExports();}
+    catch(error){setErrorMessage(getErrorMessage(error));}finally{setPrivacyExportBusy(false);}
+  }
+  async function requestAccountDeletion(){
+    const confirmation=window.prompt('This queues deletion of your personal folders, original files, extracted text and vectors, conversations, reminders, WhatsApp link, sign-in factors, and account profile. Required audit references remain. Type DELETE MY ACCOUNT to continue.');
+    if(confirmation!=='DELETE MY ACCOUNT')return;
+    try{await request('/privacy/account',token,{method:'DELETE',body:JSON.stringify({confirmation})});setSuccessMessage('Your account deletion request is queued. Your personal data will be removed by the background worker.');await request('/auth/logout',token,{method:'POST'});setToken('');setUserProfile(null);}
+    catch(error){setErrorMessage(getErrorMessage(error));}
   }
 
   function openLegalPage(page: "terms" | "privacy") {
@@ -608,6 +710,8 @@ export default function App() {
     }
     setSelectedDocumentId(conversation.document_id ?? "");
     setChatScope(conversation.scope_type ?? (conversation.document_id ? "document" : "folder"));
+    setLibraryCollectionId(conversation.library_collection_id ?? null);
+    setConversationVisibility(conversation.visibility ?? "private");
     if (conversation.document_id && conversation.knowledge_base_id) {
       setExpandedKnowledgeBaseIds((previous) => new Set(previous).add(conversation.knowledge_base_id!));
       setExpandedDocumentIds((previous) => new Set(previous).add(conversation.document_id!));
@@ -617,13 +721,21 @@ export default function App() {
         `/conversations/${conversation.id}/messages`,
         token,
       );
-      setMessages(saved.map(({ role, content, sources }) => ({
+      setMessages(saved.map(({ id, role, content, sources, actor_name, metadata, feedback_status }) => ({
+        message_id: id,
         role: role === "assistant" ? "assistant" : "user",
         content,
         sources,
+        actor_name,
+        confidence_label: metadata?.confidence_label,
+        confidence_score: metadata?.confidence_score,
+        answer_language: metadata?.answer_language,
+        feedback_status,
       })));
       setConversationId(conversation.id);
       setIsMobileSidebarOpen(false);
+      if (conversation.knowledge_base_id) await recordOrganizationExport("conversation", conversation.id, conversation.knowledge_base_id);
+      await downloadConversationPdf(conversation.title, saved);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -638,10 +750,26 @@ export default function App() {
         `/conversations/${conversation.id}/messages`,
         token,
       );
+      if (conversation.knowledge_base_id) await recordOrganizationExport("conversation", conversation.id, conversation.knowledge_base_id);
       await downloadConversationPdf(conversation.title, saved);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
+  }
+
+  async function changeConversationVisibility(next: "private" | "shared") {
+    if (conversationId) {
+      try {
+        const result = await request<ConversationRecord>(`/conversations/${conversationId}`, token, {
+          method: "PATCH",
+          body: JSON.stringify({ visibility: next }),
+        });
+        setConversationVisibility(result.visibility ?? next);
+        await refreshConversationHistory();
+      } catch (error) { setErrorMessage(getErrorMessage(error)); }
+      return;
+    }
+    setConversationVisibility(next);
   }
 
   function chooseExamplePrompt(prompt: string) {
@@ -667,7 +795,7 @@ export default function App() {
   }
 
   function handleSelectDocument(knowledgeBaseId: string, documentId: string) {
-    if (chatScope === "folder" && selectedKnowledgeBaseId) {
+    if (["folder", "folder_library"].includes(chatScope) && selectedKnowledgeBaseId) {
       const folderName = knowledgeBases.find((folder) => folder.id === selectedKnowledgeBaseId)?.name ?? "this folder";
       const confirmed = window.confirm(`Switch to This document? Your current chat across ${folderName} will remain saved in the folder's chat history.`);
       if (!confirmed) return;
@@ -704,10 +832,11 @@ export default function App() {
     try {
       const created = await request<KnowledgeBase>("/knowledge-bases", token, {
         method: "POST",
-        body: JSON.stringify({ name: newKnowledgeBaseName.trim() }),
+        body: JSON.stringify({ name: newKnowledgeBaseName.trim(), organization_id: activeOrganizationId || null, is_sensitive:newKnowledgeBaseSensitive }),
       });
 
       setNewKnowledgeBaseName("");
+      setNewKnowledgeBaseSensitive(false);
       await refreshKnowledgeBases();
       setSelectedKnowledgeBaseId(created.id);
       setSelectedDocumentId("");
@@ -851,10 +980,11 @@ export default function App() {
     let historyDownloaded = false;
     try {
       if (downloadHistory && pending.conversations.length) {
-        const conversationsWithMessages = await Promise.all(pending.conversations.map(async (conversation) => ({
-          title: conversation.title || "Saved conversation",
-          messages: await request<SavedChatMessage[]>(`/conversations/${conversation.id}/messages`, token),
-        })));
+        const conversationsWithMessages = await Promise.all(pending.conversations.map(async (conversation) => {
+          const messages = await request<SavedChatMessage[]>(`/conversations/${conversation.id}/messages`, token);
+          if (conversation.knowledge_base_id) await recordOrganizationExport("conversation", conversation.id, conversation.knowledge_base_id);
+          return { title: conversation.title || "Saved conversation", messages };
+        }));
         const title = pending.target.kind === "document"
           ? pending.target.document.original_filename
           : pending.target.knowledgeBase.name;
@@ -943,7 +1073,7 @@ export default function App() {
   async function handleSendQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const readyFolderDocuments = documents.filter((document) => document.status === "ready");
-    if (chatScope === "folder" && !selectedKnowledgeBaseId) {
+    if (["folder", "folder_library"].includes(chatScope) && !selectedKnowledgeBaseId) {
       setErrorMessage("Please select a folder before starting a chat.");
       return;
     }
@@ -965,13 +1095,14 @@ export default function App() {
       setErrorMessage("");
       return;
     }
-    if (!question.trim() || !selectedKnowledgeBaseId || isBusy) return;
+    if (!question.trim() || isBusy) return;
+    if (["folder", "folder_library"].includes(chatScope) && !selectedKnowledgeBaseId) { setErrorMessage("Please select a folder before starting a chat."); return; }
 
     const submittedQuestion = question.trim();
     setQuestion("");
     setMessages((previous) => [
       ...previous,
-      { role: "user", content: submittedQuestion },
+      { role: "user", content: submittedQuestion, actor_name: userProfile?.full_name },
     ]);
     setIsBusy(true);
     setBusyMessage("Searching your documents and preparing an answer...");
@@ -982,9 +1113,11 @@ export default function App() {
         method: "POST",
         body: JSON.stringify({
           scope_type: chatScope,
-          scope_id: chatScope === "document" ? selectedDocumentId : selectedKnowledgeBaseId,
+          scope_id: chatScope === "document" ? selectedDocumentId : chatScope === "library" ? libraryCollectionId : selectedKnowledgeBaseId,
+          library_collection_id: chatScope === "library" ? libraryCollectionId : chatScope === "folder_library" ? libraryCollectionId : null,
           question: submittedQuestion,
           conversation_id: conversationId,
+          visibility: conversationVisibility,
         }),
       });
 
@@ -992,9 +1125,13 @@ export default function App() {
       setMessages((previous) => [
         ...previous,
         {
+          message_id: response.assistant_message_id,
           role: "assistant",
           content: response.answer,
           sources: response.sources,
+          confidence_label: response.confidence_label,
+          confidence_score: response.confidence_score,
+          answer_language: response.answer_language,
         },
       ]);
       void refreshConversationHistory();
@@ -1005,9 +1142,42 @@ export default function App() {
     }
   }
 
+  async function submitAnswerFeedback(message: ChatMessage, rating: "up" | "down" | "report") {
+    if (!message.message_id || !token) return;
+    let comment: string | undefined;
+    if (rating === "report") {
+      comment = window.prompt("What seems wrong with this answer? (Optional)")?.trim() || undefined;
+      if (comment === undefined && window.confirm("Send the report without a comment?")) {
+        // Continue without a comment.
+      } else if (comment === undefined) return;
+    }
+    try {
+      await request(`/messages/${message.message_id}/feedback`, token, { method: "POST", body: JSON.stringify({ rating, comment }) });
+      setMessages((previous) => previous.map((item) => item.message_id === message.message_id ? { ...item, feedback_status: rating } : item));
+    } catch (error) { setErrorMessage(getErrorMessage(error)); }
+  }
+
   if (legalPage) {
     return <Suspense fallback={<div className="app-loading" role="status">Loading…</div>}><TermsPrivacy document={legalPage} onOpen={setLegalPage} onBack={() => setLegalPage(null)} /></Suspense>;
   }
+
+  if (sessionChecking) return <div className="app-loading" role="status">Checking your secure session…</div>;
+
+  if (activePage === 'data-processing' && token) return <Suspense fallback={<div className="app-loading" role="status">Loading data processing details…</div>}><DataProcessingPage token={token} onBack={() => setActivePage(consentRequired ? 'workspace' : 'settings')} /></Suspense>;
+
+  if (consentRequired && token) return (
+    <main className="privacy-consent-screen">
+      <section className="privacy-consent-card">
+        <ShieldCheck size={30}/><h1>Please review the updated notices</h1>
+        <p>To continue using DocuMind AI, review and accept the current Terms and Privacy Notice. Your acceptance is saved with the version and time.</p>
+        <p><strong>Terms version:</strong> {consentVersions.terms_version} · <strong>Privacy version:</strong> {consentVersions.privacy_version}</p>
+        <div className="settings-links"><button type="button" onClick={() => openLegalPage('terms')}>Read Terms</button><button type="button" onClick={() => openLegalPage('privacy')}>Read Privacy Notice</button><button type="button" onClick={() => setActivePage('data-processing')}>See data processing details</button></div>
+        {errorMessage&&<p className="error" role="alert">{errorMessage}</p>}
+        <button className="admin-primary" type="button" disabled={consentBusy} onClick={() => void acceptCurrentNotices()}>{consentBusy?'Saving acceptance…':'Accept current notices'}</button>
+        <button className="auth-toggle" type="button" onClick={() => void handleLogout()}>Sign out</button>
+      </section>
+    </main>
+  );
 
   // Before login, show only the authentication form.
   if (!token) {
@@ -1092,6 +1262,7 @@ export default function App() {
             <>
               <input type="email" required autoComplete="email" placeholder="Email address" value={email} onChange={(event) => setEmail(event.target.value)} />
               <input type="password" required autoComplete="current-password" placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} />
+              <input type="text" inputMode="numeric" autoComplete="one-time-code" placeholder="Authenticator code (admins only, if enabled)" value={totpCode} onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, '').slice(0,6))} />
             </>
           )}
 
@@ -1141,30 +1312,42 @@ export default function App() {
     );
   }
 
+  if (activePage === "library") return <Suspense fallback={<div className="app-loading" role="status">Loading library…</div>}><LibraryPage token={token} onBack={() => setActivePage("workspace")} onAsk={(collectionId) => { setLibraryCollectionId(collectionId); setSelectedKnowledgeBaseId(""); setSelectedDocumentId(""); setChatScope("library"); clearCurrentConversation(); setActivePage("workspace"); }} /></Suspense>;
   if (activePage === "settings") return (
     <main className="settings-wrap">
       <section className="settings-card">
         <button className="legal-back" type="button" onClick={() => setActivePage("workspace")}><ChevronLeft size={17} /> Back to workspace</button>
         <div className="settings-heading"><SettingsIcon size={23} /><div><h1>Account settings</h1><p>Manage your session and find service information.</p></div></div>
         <section className="settings-detail"><h2>Signed-in account</h2><p><strong>Name</strong><span>{userProfile?.full_name ?? "Loading account…"}</span></p><p><strong>Email</strong><span>{userProfile?.email ?? ""}</span></p></section>
-        <section className="settings-detail"><h2>Plan and billing</h2><p>Review your plan or subscription payment status.</p><button type="button" onClick={() => setActivePage("billing")}><CreditCard size={16} /> Open plan &amp; billing</button></section>
+        <Suspense fallback={<section className="settings-detail" role="status">Loading answer language settings…</section>}><AnswerLanguageSettings token={token} /></Suspense>
+        <section className="settings-detail"><h2>Plan and billing</h2><p>Review your plan or subscription payment status.</p><button type="button" onClick={() => { setBillingOrganizationId(null); setActivePage("billing"); }}><CreditCard size={16} /> Open plan &amp; billing</button></section>
+        <Suspense fallback={<section className="settings-detail" role="status">Loading WhatsApp settings…</section>}><WhatsAppSettings token={token} /></Suspense>
         <section className="settings-detail"><h2>Legal and privacy</h2><div className="settings-links"><button type="button" onClick={() => openLegalPage("terms")}>Read Terms of service</button><button type="button" onClick={() => openLegalPage("privacy")}>Read Privacy notice</button></div></section>
+        <section className="settings-detail"><h2>Data processing</h2><p>Review which service providers process information and what each provider is used for.</p><button type="button" onClick={() => setActivePage("data-processing")}>Open data processing page</button></section>
+        <section className="settings-detail privacy-export-card"><h2>Download all my data</h2><p>Prepare a ZIP containing your personal folder metadata, original files, conversation JSON and PDF exports. Organization-owned data is excluded.</p><button className="admin-secondary" type="button" disabled={privacyExportBusy} onClick={()=>void requestPersonalExport()}>{privacyExportBusy?'Requesting export…':'Request my data ZIP'}</button><button type="button" onClick={()=>void refreshPrivacyExports()}>Refresh export status</button><div className="privacy-export-list">{privacyExports.map(item=><p key={item.id}><strong>{item.status}</strong> · {new Date(item.created_at).toLocaleString()} {item.error&&<span className="error"> · {item.error}</span>}{item.download_url&&<a href={item.download_url} rel="noreferrer">Download ZIP</a>}</p>)}</div></section>
+        <section className="settings-detail privacy-danger-zone"><h2>Delete my account and personal data</h2><p>This queues removal of your account, personal folders, original files, vectors, conversations, reminders, and linked WhatsApp account. Transfer or delete organizations you own first. Permanent audit records retain minimal identifiers as evidence of the deletion.</p><button className="danger-button" type="button" onClick={()=>void requestAccountDeletion()}>Request account deletion</button>{errorMessage&&<p className="error" role="alert">{errorMessage}</p>}{successMessage&&<p role="status">{successMessage}</p>}</section>
         <button className="settings-signout" type="button" onClick={handleLogout}><LogOut size={17} /> Sign out of this account</button>
       </section>
     </main>
   );
 
   if (activePage === "admin") return <Suspense fallback={<div className="app-loading" role="status">Loading admin tools…</div>}><AdminDashboard token={token} onBack={() => setActivePage("workspace")} /></Suspense>;
-  if (activePage === "billing") return <Suspense fallback={<div className="app-loading" role="status">Loading billing…</div>}><BillingPage token={token} onBack={() => setActivePage("workspace")} /></Suspense>;
+  if (activePage === "organizations") return <Suspense fallback={<div className="app-loading" role="status">Loading organizations…</div>}><OrganizationsPage token={token} selectedId={activeOrganizationId} onSelect={(id) => { setActiveOrganizationId(id); void refreshOrganizations(); }} onBack={() => { void refreshOrganizations(); setActivePage("workspace"); }} onBilling={(id) => { setBillingOrganizationId(id); setActivePage("billing"); }} /></Suspense>;
+  if (activePage === "billing") return <Suspense fallback={<div className="app-loading" role="status">Loading billing…</div>}><BillingPage token={token} organizationId={billingOrganizationId} onBack={() => setActivePage(billingOrganizationId ? "organizations" : "workspace")} /></Suspense>;
   if (activePage === "upcoming") return <Suspense fallback={<div className="app-loading" role="status">Loading important dates…</div>}><ImportantDates token={token} upcoming onBack={() => setActivePage("workspace")} /></Suspense>;
 
-  const selectedKnowledgeBase = knowledgeBases.find(
+  const visibleKnowledgeBases = knowledgeBases.filter((knowledgeBase) => (knowledgeBase.organization_id ?? "") === activeOrganizationId);
+  const selectedKnowledgeBase = visibleKnowledgeBases.find(
     (knowledgeBase) => knowledgeBase.id === selectedKnowledgeBaseId
   );
+  const activeOrganization = organizations.find((organization) => organization.id === activeOrganizationId);
+  const canManageActiveOrg = !activeOrganization || ["owner", "admin"].includes(activeOrganization.role);
+  const canUploadToActiveOrg = !activeOrganization || activeOrganization.role !== "viewer";
   const selectedDocument = documents.find((document) => document.id === selectedDocumentId);
   const readyFolderDocuments = documents.filter((document) => document.status === "ready");
   const selectedFolderDocumentsLoading = !!selectedKnowledgeBaseId && !!folderDocuments[selectedKnowledgeBaseId]?.loading;
-  const hasValidChatScope = chatScope === "folder"
+  const hasValidChatScope = chatScope === "library" ? true : chatScope === "folder_library" ? !!selectedKnowledgeBaseId
+    : chatScope === "folder"
     ? !!selectedKnowledgeBaseId && readyFolderDocuments.length > 0
     : !!selectedDocumentId && selectedDocument?.status === "ready";
   const examplePrompts = [
@@ -1215,6 +1398,14 @@ export default function App() {
         ><X size={20} /></button>
 
         <div className="smalltitle">FOLDERS</div>
+        <button type="button" className="sidebar-library-link" onClick={() => { setActivePage("library"); setIsMobileSidebarOpen(false); }}><BookOpen size={17}/> Kenyan library</button>
+        <label className="organization-switcher">Workspace
+          <select value={activeOrganizationId} onChange={(event) => { clearCurrentConversation(); setActiveOrganizationId(event.target.value); setSelectedKnowledgeBaseId(""); setSelectedDocumentId(""); setDocuments([]); setChatScope("folder"); setConversationVisibility("private"); }}>
+            <option value="">Personal folders</option>
+            {organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}
+          </select>
+        </label>
+        <button type="button" className="sidebar-library-link" onClick={() => { setActivePage("organizations"); setIsMobileSidebarOpen(false); }}>Manage organizations</button>
 
         <form className="newkb" onSubmit={handleCreateKnowledgeBase}>
           <input
@@ -1222,13 +1413,14 @@ export default function App() {
             value={newKnowledgeBaseName}
             onChange={(event) => setNewKnowledgeBaseName(event.target.value)}
           />
-          <button title="Create" disabled={isBusy}>
+          <button title="Create" disabled={isBusy || !canManageActiveOrg}>
             <Plus size={18} />
           </button>
+          <label className="sensitive-folder-option"><input type="checkbox" checked={newKnowledgeBaseSensitive} onChange={(event)=>setNewKnowledgeBaseSensitive(event.target.checked)}/><span>Mark new folder sensitive</span></label>
         </form>
 
         <nav className="folder-tree" aria-label="Folders and files">
-          {knowledgeBases.map((knowledgeBase) => {
+          {visibleKnowledgeBases.map((knowledgeBase) => {
             const isExpanded = expandedKnowledgeBaseIds.has(knowledgeBase.id);
             const folder = folderDocuments[knowledgeBase.id];
             const folderChats = conversationHistory.filter((conversation) => conversation.knowledge_base_id === knowledgeBase.id && conversation.scope_type === "folder");
@@ -1254,18 +1446,19 @@ export default function App() {
                     {knowledgeBase.is_archived && <small>Archived</small>}
                     {knowledgeBase.is_pinned && <Pin size={13} aria-label="Pinned" />}
                   </button>
-                  <ItemActionMenu
+                  {canManageActiveOrg && <ItemActionMenu
                     label={knowledgeBase.name}
                     open={openItemMenuId === `folder-${knowledgeBase.id}`}
                     onToggle={() => setOpenItemMenuId((current) => current === `folder-${knowledgeBase.id}` ? null : `folder-${knowledgeBase.id}`)}
                     onClose={() => setOpenItemMenuId(null)}
                     items={[
+                      { label: knowledgeBase.is_sensitive ? "Remove sensitive warning" : "Mark folder sensitive", icon: <ShieldCheck size={15} />, onClick: () => void updateItem(`/knowledge-bases/${knowledgeBase.id}`, { is_sensitive: !knowledgeBase.is_sensitive }) },
                       { label: knowledgeBase.is_pinned ? "Unpin" : "Pin", icon: <Pin size={15} />, onClick: () => void updateItem(`/knowledge-bases/${knowledgeBase.id}`, { is_pinned: !knowledgeBase.is_pinned }) },
                       { label: "Rename", icon: <Pencil size={15} />, onClick: () => promptRename("folder", knowledgeBase.name, (name) => void updateItem(`/knowledge-bases/${knowledgeBase.id}`, { name })) },
                       { label: knowledgeBase.is_archived ? "Restore" : "Archive", icon: <Archive size={15} />, onClick: () => void updateItem(`/knowledge-bases/${knowledgeBase.id}`, { is_archived: !knowledgeBase.is_archived }) },
                       { label: "Delete", icon: <Trash2 size={15} />, danger: true, onClick: () => void handleDeleteKnowledgeBase(knowledgeBase) },
                     ]}
-                  />
+                  />}
                 </div>
                 {isExpanded && (
                   <div className="folder-file-tree" aria-label={`Files in ${knowledgeBase.name}`}>
@@ -1309,13 +1502,14 @@ export default function App() {
                             >
                               <FileText size={14} />
                               <span>{document.original_filename}</span>
+                              {knowledgeBase.organization_id && document.uploaded_by_name && <small title={document.uploaded_by_email ?? ""}>by {document.uploaded_by_name}</small>}
                               {document.is_archived && <small>archived</small>}
                               {document.is_pinned && <Pin size={12} aria-label="Pinned" />}
                               {document.status !== "ready" && (
                                 <small>{document.status === "pending" || document.status === "processing" ? `Processing: ${document.progress_stage}` : document.status}</small>
                               )}
                             </button>
-                            <ItemActionMenu
+                            {canManageActiveOrg && <ItemActionMenu
                               label={document.original_filename}
                               open={openItemMenuId === `document-${document.id}`}
                               onToggle={() => setOpenItemMenuId((current) => current === `document-${document.id}` ? null : `document-${document.id}`)}
@@ -1326,7 +1520,7 @@ export default function App() {
                                 { label: document.is_archived ? "Restore" : "Archive", icon: <Archive size={15} />, onClick: () => void updateItem(`/knowledge-bases/${knowledgeBase.id}/documents/${document.id}`, { is_archived: !document.is_archived }) },
                                 { label: "Delete", icon: <Trash2 size={15} />, danger: true, onClick: () => handleDeleteDocument(knowledgeBase.id, document) },
                               ]}
-                            />
+                            />}
                           </div>
                           {document.status === "failed" && (
                             <div className="folder-document-failure" role="alert">
@@ -1442,8 +1636,8 @@ export default function App() {
         <section className="chat">
           <div className="chat-heading">
             <div>
-              <h2>{chatScope === "folder" ? selectedKnowledgeBase?.name ?? "Your workspace" : selectedDocument?.original_filename ?? selectedKnowledgeBase?.name ?? "Your workspace"}</h2>
-              <p>{chatScope === "folder"
+              <h2>{chatScope === "library" ? "Kenyan public library" : chatScope === "folder_library" ? selectedKnowledgeBase?.name ?? "Folder + library" : chatScope === "folder" ? selectedKnowledgeBase?.name ?? "Your workspace" : selectedDocument?.original_filename ?? selectedKnowledgeBase?.name ?? "Your workspace"}</h2>
+              <p>{chatScope === "library" ? "Searching current official library documents." : chatScope === "folder_library" ? `Asking across: ${selectedKnowledgeBase?.name ?? "selected folder"} (${readyFolderDocuments.length} folder documents) + Kenyan library` : chatScope === "folder"
                 ? selectedKnowledgeBase ? selectedFolderDocumentsLoading ? "Checking the files in this folder…" : `Asking across: ${selectedKnowledgeBase.name} (${readyFolderDocuments.length} document${readyFolderDocuments.length === 1 ? "" : "s"})` : "Choose a folder to chat across its ready files."
                 : selectedDocument ? "Questions and saved chats are tied to this file. Expand it in the sidebar to reopen a chat." : "Please select a file to use the chatbot."}</p>
             </div>
@@ -1459,10 +1653,12 @@ export default function App() {
                   title="Download this conversation"
                   aria-label="Download this conversation"
                   disabled={isBusy}
-                  onClick={() => void downloadConversationPdf(
-                    conversationHistory.find((item) => item.id === conversationId)?.title ?? "DocuMind conversation",
-                    messages,
-                  ).catch((error) => setErrorMessage(getErrorMessage(error)))}
+                  onClick={() => {
+                    const currentConversation = conversationHistory.find((item) => item.id === conversationId);
+                    const exportKnowledgeBaseId = currentConversation?.knowledge_base_id ?? selectedKnowledgeBaseId;
+                    if (conversationId && exportKnowledgeBaseId) void recordOrganizationExport("conversation", conversationId, exportKnowledgeBaseId).catch((error) => setErrorMessage(getErrorMessage(error)));
+                    void downloadConversationPdf(currentConversation?.title ?? "DocuMind conversation", messages).catch((error) => setErrorMessage(getErrorMessage(error)));
+                  }}
                 >
                   <Download size={17} />
                 </button>
@@ -1470,11 +1666,13 @@ export default function App() {
               <button className="chat-tool-button" type="button" onClick={() => setIsHelpPanelOpen(true)} title="Help and examples" aria-label="Open help and examples">
                 <HelpCircle size={17} />
               </button>
-              <button className="upload-trigger" onClick={() => void openUploadPanel()} disabled={!selectedKnowledgeBaseId}>
+              <button className="upload-trigger" onClick={() => void openUploadPanel()} disabled={!selectedKnowledgeBaseId || !canUploadToActiveOrg}>
                 <Upload size={17} /> Add files
               </button>
             </div>
           </div>
+
+          {(chatScope === "library" || chatScope === "folder_library") && <div className="legal-library-banner" role="note">Information only. Not legal or tax advice. Check the official source.</div>}
 
           {selectedDocument && selectedDocument.status === "ready" && (
             <Suspense fallback={<div className="important-dates-loading" role="status">Loading important dates…</div>}>
@@ -1519,28 +1717,43 @@ export default function App() {
             )}
             {messages.map((message, index) => (
               <div key={index} className={`bubble ${message.role}`}>
+                {message.role === "user" && message.actor_name && <small className="message-actor">{message.actor_name}</small>}
                 {message.role === "assistant"
                   ? <AssistantMessage content={message.content} />
                   : <div>{message.content}</div>}
                 {message.role === "assistant" && (
+                  <>
+                  <div className={`answer-confidence ${message.confidence_label?.toLowerCase().replaceAll(" ", "-") ?? ""}`} aria-label={`Source match: ${message.confidence_label ?? "not rated"}`}>
+                    {message.confidence_label ?? "Answer"}{message.confidence_score != null ? ` · ${Math.round(message.confidence_score * 100)}% retrieval match` : ""}
+                  </div>
+                  {message.message_id && <div className="answer-feedback" aria-label="Answer feedback">
+                    <button type="button" aria-pressed={message.feedback_status === "up"} title="Helpful answer" onClick={() => void submitAnswerFeedback(message, "up")}><ThumbsUp size={14} /> Helpful</button>
+                    <button type="button" aria-pressed={message.feedback_status === "down"} title="Not helpful" onClick={() => void submitAnswerFeedback(message, "down")}><ThumbsDown size={14} /> Not helpful</button>
+                    <button type="button" aria-pressed={message.feedback_status === "report"} title="Report a wrong answer" onClick={() => void submitAnswerFeedback(message, "report")}><Flag size={14} /> Report a wrong answer</button>
+                    {message.feedback_status && <span role="status">Feedback saved</span>}
+                  </div>}
                   <button
                     className="answer-print"
                     type="button"
                     title="Download this answer as PDF"
-                    onClick={() => void downloadAnswerPdf(
-                      message,
-                      conversationHistory.find((item) => item.id === conversationId)?.title ?? "DocuMind teaching notes",
-                    ).catch((error) => setErrorMessage(getErrorMessage(error)))}
+                    onClick={() => {
+                      const currentConversation = conversationHistory.find((item) => item.id === conversationId);
+                      const exportKnowledgeBaseId = currentConversation?.knowledge_base_id ?? selectedKnowledgeBaseId;
+                      if (conversationId && exportKnowledgeBaseId) void recordOrganizationExport("conversation", conversationId, exportKnowledgeBaseId).catch((error) => setErrorMessage(getErrorMessage(error)));
+                      void downloadAnswerPdf(message, currentConversation?.title ?? "DocuMind teaching notes").catch((error) => setErrorMessage(getErrorMessage(error)));
+                    }}
                   ><Download size={14} /> Download PDF</button>
+                  </>
                 )}
                 {message.sources && message.sources.length > 0 && (
                   <div className="sources">
-                    <strong>{chatScope === "folder" ? `Sources from ${new Set(message.sources.map((source) => source.document_id)).size} document${new Set(message.sources.map((source) => source.document_id)).size === 1 ? "" : "s"}` : "Sources"}</strong>
+                    <strong>{chatScope === "folder" || chatScope === "folder_library" ? `Sources from ${new Set(message.sources.filter((source) => source.source_type === "library" ? true : !!source.document_id).map((source) => source.filename)).size} documents` : "Sources"}</strong>
                     {message.sources.map((source, sourceIndex) => (
-                      <div className="source" key={`${source.document_id}-${sourceIndex}`}>
+                      <div className="source" key={`${source.document_id ?? source.filename}-${sourceIndex}`}>
                         <span className="source-title">
-                          [{sourceIndex + 1}] {source.filename}{source.page_number != null ? ` · page ${source.page_number}` : ""}
+                          [{sourceIndex + 1}] {source.filename}{source.section_title ? ` · ${source.section_title}` : ""}{source.page_number != null ? ` · page ${source.page_number}` : ""}{source.version_label ? ` · ${source.version_label}` : ""}
                         </span>
+                        {source.source_url && <a className="library-source-link" href={source.source_url} target="_blank" rel="noreferrer">Open official source</a>}
                         <p>{source.excerpt}</p>
                       </div>
                     ))}
@@ -1553,12 +1766,14 @@ export default function App() {
             <div ref={messagesEndRef} />
           </div>
 
-          {selectedKnowledgeBase && <div className="chat-scope-row">
+              {selectedKnowledgeBase && <div className="chat-scope-row">
             <div className="chat-scope-toggle" role="group" aria-label="Chat search scope" onKeyDown={(event) => {
               if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+              const scopes = selectedDocument ? ["document", "folder", "folder_library"] : ["folder", "folder_library"];
+              const currentIndex = Math.max(0, scopes.indexOf(chatScope));
               const nextScope = event.key === "ArrowRight"
-                ? chatScope === "document" ? "folder" : "document"
-                : chatScope === "folder" ? "document" : "folder";
+                ? scopes[(currentIndex + 1) % scopes.length]
+                : scopes[(currentIndex + scopes.length - 1) % scopes.length];
               if (nextScope === "document" && !selectedDocument) return;
               event.preventDefault();
               if (nextScope !== chatScope && !isBusy) { clearCurrentConversation(); setChatScope(nextScope); }
@@ -1566,7 +1781,13 @@ export default function App() {
             }}>
               <button data-chat-scope="document" type="button" className={chatScope === "document" ? "active" : ""} aria-pressed={chatScope === "document"} disabled={!selectedDocument || isBusy} onClick={() => { if (chatScope !== "document") { clearCurrentConversation(); setChatScope("document"); } }}>This document</button>
               <button data-chat-scope="folder" type="button" className={chatScope === "folder" ? "active" : ""} aria-pressed={chatScope === "folder"} disabled={isBusy} onClick={() => { if (chatScope !== "folder") { clearCurrentConversation(); setChatScope("folder"); } }}>This folder</button>
+              {selectedKnowledgeBase && <button data-chat-scope="folder_library" type="button" className={chatScope === "folder_library" ? "active" : ""} aria-pressed={chatScope === "folder_library"} disabled={isBusy} onClick={() => { if (chatScope !== "folder_library") { clearCurrentConversation(); setChatScope("folder_library"); } }}>Folder + library</button>}
             </div>
+            {!!selectedKnowledgeBase.organization_id && <label className="conversation-visibility">Conversation
+              <select value={conversationVisibility} onChange={(event) => void changeConversationVisibility(event.target.value as "private" | "shared")} disabled={isBusy}>
+                <option value="private">Private to me</option><option value="shared">Shared with organization</option>
+              </select>
+            </label>}
           </div>}
 
           <form className="composer" onSubmit={handleSendQuestion}>
@@ -1621,6 +1842,7 @@ export default function App() {
               </div>
               <button className="icon-button" aria-label="Close uploads" onClick={() => setIsUploadPanelOpen(false)} disabled={isBusy}><X /></button>
             </div>
+            {selectedKnowledgeBase?.is_sensitive && <p className="sensitive-upload-warning" role="alert"><strong>Sensitive folder.</strong> Uploaded content may be sent to DeepSeek when you use chat. Do not upload sensitive information unless your organization permits this processing. This warning does not block external AI processing.</p>}
             <label className={`upload ${isBusy ? "disabled" : ""}`}>
               <Upload size={21} />
               <strong>{isBusy ? busyMessage : "Choose files to upload"}</strong>

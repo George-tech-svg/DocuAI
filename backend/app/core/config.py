@@ -42,6 +42,17 @@ class Settings(BaseSettings):
     SUBSCRIPTIONS_ENFORCED: bool = False
     ADMIN_BOOTSTRAP_CODE: str = ''
     GOOGLE_CLIENT_ID: str = ''
+    AUTH_COOKIE_SECURE: bool = True
+    TERMS_VERSION: str = '2026-11-28'
+    PRIVACY_POLICY_VERSION: str = '2026-11-28'
+    PRIVACY_EXPORT_MAX_MB: int = Field(default=500, ge=10, le=2000)
+    BIRD_API_KEY: str = ''
+    BIRD_WORKSPACE_ID: str = ''
+    BIRD_WHATSAPP_NUMBER_ID: str = ''
+    BIRD_WEBHOOK_SECRET: str = ''
+    BIRD_WHATSAPP_REMINDER_TEMPLATE_SLUG: str = ''
+    BIRD_WHATSAPP_NOTIFICATION_TEMPLATE_SLUG: str = ''
+    BIRD_WHATSAPP_OTP_TEMPLATE_SLUG: str = 'bird_otp'
     API_V1_PREFIX: str = '/api/v1'
     model_config = SettingsConfigDict(
         env_file=PROJECT_ENV_FILES,

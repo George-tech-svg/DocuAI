@@ -5,16 +5,55 @@ import json
 import re
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session, aliased
 from app.api.dependencies import admin_user
 from app.db.session import get_db
-from app.models.entities import AdminAuditLog, Conversation, Document, Job, KnowledgeBase, Message, MpesaPayment, PaymentRecoveryRequest, Subscription, SubscriptionPlan, User
+from app.models.entities import AdminAuditLog, AuditEvent, Conversation, Document, Job, KnowledgeBase, Message, MpesaPayment, PaymentRecoveryRequest, Subscription, SubscriptionPlan, User, LibraryDocument, LibraryCollection, AnswerFeedback
 from app.schemas.billing import AdminActivity, AdminAuditEntry, AdminMember, AdminOverview, AdminPayment, AdminPaymentRecoveryView, AdminSubscription, AdminSubscriptionUpdate, MemberUpdate, PaymentRecoveryReview, PaymentRecoveryReviewResult, PlanCreate, PlanResponse, PlanUpdate, RecoveryMatch
 from app.core.config import get_settings
 from app.services.mpesa import mpesa_ready
 
 router = APIRouter(prefix='/admin', tags=['Administration'], dependencies=[Depends(admin_user)])
+
+def _admin_event(db, admin, action, resource_type, resource_id=None, details=None):
+    db.add(AuditEvent(organization_id=None, actor_user_id=admin.id if admin else None,
+        action=action, resource_type=resource_type,
+        resource_id=str(resource_id) if resource_id else None, details=details or {}))
+
+class AnswerFeedbackReview(BaseModel):
+    status: str = Field(pattern='^(reviewed|resolved)$')
+    review_note: str | None = Field(default=None, max_length=2000)
+
+@router.get('/answer-feedback')
+def answer_feedback_reports(db: Session = Depends(get_db)):
+    rows = db.execute(select(AnswerFeedback, User).join(User, User.id == AnswerFeedback.user_id)
+        .where(AnswerFeedback.rating == 'report').order_by(AnswerFeedback.created_at.desc()).limit(200)).all()
+    result = []
+    for feedback, member in rows:
+        try: sources = json.loads(feedback.sources_json or '[]')
+        except (TypeError, json.JSONDecodeError): sources = []
+        result.append({'id': str(feedback.id), 'user_id': str(feedback.user_id), 'member_name': member.full_name,
+            'member_email': member.email, 'question': feedback.question, 'answer': feedback.answer,
+            'sources': sources, 'model_version': feedback.model_version, 'comment': feedback.comment,
+            'status': feedback.status, 'review_note': feedback.review_note,
+            'reviewed_by_user_id': str(feedback.reviewed_by_user_id) if feedback.reviewed_by_user_id else None,
+            'created_at': feedback.created_at, 'reviewed_at': feedback.reviewed_at})
+    return {'items': result}
+
+@router.patch('/answer-feedback/{feedback_id}')
+def review_answer_feedback(feedback_id: UUID, data: AnswerFeedbackReview,
+                           administrator: User = Depends(admin_user), db: Session = Depends(get_db)):
+    row = db.scalar(select(AnswerFeedback).where(AnswerFeedback.id == feedback_id).with_for_update())
+    if not row or row.rating != 'report': raise HTTPException(404, 'Reported answer not found.')
+    row.status, row.review_note = data.status, data.review_note
+    row.reviewed_by_user_id = administrator.id
+    row.reviewed_at = datetime.now(timezone.utc)
+    _admin_event(db, administrator, 'answer_report_reviewed', 'answer_feedback', row.id,
+        {'status':data.status,'review_note':data.review_note})
+    db.commit()
+    return {'id': str(row.id), 'status': row.status, 'reviewed_at': row.reviewed_at}
 
 @router.get('/jobs')
 def processing_jobs(db: Session = Depends(get_db)):
@@ -29,29 +68,39 @@ def processing_jobs(db: Session = Depends(get_db)):
         payload = job.payload if isinstance(job.payload, dict) else {}
         document_id = payload.get('document_id')
         document = db.get(Document, document_id) if document_id else None
+        library_document_id = payload.get('library_document_id')
+        library_document = db.get(LibraryDocument, library_document_id) if library_document_id else None
         failed.append({
             'id': str(job.id), 'type': job.type, 'status': job.status,
             'attempts': job.attempts, 'max_attempts': job.max_attempts,
             'last_error': job.last_error, 'created_at': job.created_at,
             'updated_at': job.updated_at, 'document_id': str(document_id) if document_id else None,
-            'document_name': document.original_filename if document else None,
+            'document_name': document.original_filename if document else library_document.title if library_document else None,
+            'library_document_id': str(library_document_id) if library_document_id else None,
         })
     return {'counts': counts, 'failed': failed}
 
 @router.post('/jobs/{job_id}/retry')
-def retry_processing_job(job_id: UUID, db: Session = Depends(get_db)):
+def retry_processing_job(job_id: UUID, administrator: User=Depends(admin_user), db: Session = Depends(get_db)):
     job = db.scalar(select(Job).where(Job.id == job_id).with_for_update())
     if not job:
         raise HTTPException(404, 'Processing job not found.')
     if job.status != 'failed':
         raise HTTPException(409, 'Only failed processing jobs can be retried.')
-    if job.type not in {'index_document', 'extract_events', 'send_due_reminders'}:
+    retryable_types = {'index_document', 'extract_events', 'send_due_reminders', 'ingest_library_document',
+        'record_library_update', 'export_user_data', 'export_organization_data', 'delete_user_data',
+        'delete_organization_data', 'enforce_organization_retention', 'cleanup_privacy_exports'}
+    if job.type not in retryable_types:
         raise HTTPException(400, 'This job type cannot be retried from the admin console.')
     payload = job.payload if isinstance(job.payload, dict) else {}
     document_id = payload.get('document_id')
     document = db.get(Document, document_id) if document_id else None
+    library_document_id = payload.get('library_document_id')
+    library_document = db.get(LibraryDocument, library_document_id) if library_document_id else None
     if job.type in {'index_document', 'extract_events'} and not document:
         raise HTTPException(404, 'The document for this job no longer exists.')
+    if job.type == 'ingest_library_document' and not library_document:
+        raise HTTPException(404, 'The library document for this job no longer exists.')
     now = datetime.now(timezone.utc)
     job.status = 'queued'
     job.attempts = 0
@@ -66,6 +115,9 @@ def retry_processing_job(job_id: UUID, db: Session = Depends(get_db)):
         document.progress_stage = 'extracting'
         document.processing_error = None
         document.updated_at = now
+    if library_document and job.type == 'ingest_library_document':
+        library_document.status = 'queued'; library_document.processing_error = None; library_document.updated_at = now
+    _admin_event(db, administrator, 'processing_job_retried', 'job', job.id, {'type':job.type})
     db.commit()
     return {'id': str(job.id), 'status': job.status, 'message': 'The processing job was queued again.'}
 
@@ -354,6 +406,9 @@ def review_payment_recovery(
         }),
     )
     db.add(audit)
+    _admin_event(db, admin, audit_action, 'payment_recovery_request', recovery.id,
+        {'member_id':str(member.id),'matched_payment_id':str(matched_payment.id) if matched_payment else None,
+         'reason':audit_reason})
     db.commit()
     db.refresh(recovery)
     return PaymentRecoveryReviewResult(
@@ -404,7 +459,10 @@ def update_member(user_id: UUID, data: MemberUpdate, admin: User=Depends(admin_u
         raise HTTPException(404, 'Member not found')
     if member.id == admin.id and not data.is_active:
         raise HTTPException(400, 'You cannot deactivate your own administrator account.')
+    old_state = member.is_active
     member.is_active = data.is_active
+    _admin_event(db, admin, 'member_account_status_changed', 'user', member.id,
+        {'from':old_state,'to':member.is_active})
     db.commit()
     db.refresh(member)
     latest = db.scalar(select(Subscription).where(Subscription.user_id == member.id).order_by(Subscription.created_at.desc()))
@@ -420,20 +478,24 @@ def list_plans(db: Session=Depends(get_db)):
     return list(db.scalars(select(SubscriptionPlan).order_by(SubscriptionPlan.created_at.desc())).all())
 
 @router.post('/plans', response_model=PlanResponse, status_code=201)
-def create_plan(data: PlanCreate, db: Session=Depends(get_db)):
+def create_plan(data: PlanCreate, admin: User=Depends(admin_user), db: Session=Depends(get_db)):
     plan = SubscriptionPlan(**data.model_dump())
     db.add(plan)
+    db.flush()
+    _admin_event(db, admin, 'subscription_plan_created', 'subscription_plan', plan.id, {'name':plan.name})
     db.commit()
     db.refresh(plan)
     return plan
 
 @router.patch('/plans/{plan_id}', response_model=PlanResponse)
-def update_plan(plan_id: UUID, data: PlanUpdate, db: Session=Depends(get_db)):
+def update_plan(plan_id: UUID, data: PlanUpdate, admin: User=Depends(admin_user), db: Session=Depends(get_db)):
     plan = db.get(SubscriptionPlan, plan_id)
     if plan is None:
         raise HTTPException(404, 'Plan not found')
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(plan, key, value)
+    _admin_event(db, admin, 'subscription_plan_updated', 'subscription_plan', plan.id,
+        {'fields':list(data.model_dump(exclude_unset=True))})
     db.commit()
     db.refresh(plan)
     return plan
@@ -450,13 +512,26 @@ def list_subscriptions(db: Session=Depends(get_db)):
         created_at=sub.created_at) for sub, user, plan in rows]
 
 @router.patch('/subscriptions/{subscription_id}')
-def update_subscription(subscription_id: UUID, data: AdminSubscriptionUpdate, db: Session=Depends(get_db)):
+def update_subscription(subscription_id: UUID, data: AdminSubscriptionUpdate, admin: User=Depends(admin_user), db: Session=Depends(get_db)):
     subscription = db.get(Subscription, subscription_id)
     if subscription is None:
         raise HTTPException(404, 'Subscription not found')
+    old_status = subscription.status
     subscription.status = data.status
+    _admin_event(db, admin, 'subscription_status_changed', 'subscription', subscription.id,
+        {'from':old_status,'to':data.status})
     db.commit()
     return {'id': subscription.id, 'status': subscription.status}
+
+@router.get('/audit-events')
+def platform_audit_events(db: Session=Depends(get_db)):
+    actor = aliased(User)
+    rows = db.execute(select(AuditEvent, actor.email).outerjoin(actor, actor.id == AuditEvent.actor_user_id)
+        .where(AuditEvent.organization_id.is_(None)).order_by(AuditEvent.created_at.desc()).limit(500)).all()
+    return {'items':[{'id':str(event.id),'actor_user_id':str(event.actor_user_id) if event.actor_user_id else None,
+        'actor_email':email,'action':event.action,'resource_type':event.resource_type,
+        'resource_id':event.resource_id,'details':event.details,'created_at':event.created_at}
+        for event,email in rows]}
 
 @router.get('/payments', response_model=list[AdminPayment])
 def list_payments(db: Session=Depends(get_db)):

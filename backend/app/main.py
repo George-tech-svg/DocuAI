@@ -1,7 +1,9 @@
 """Create the FastAPI application and configure middleware and routing."""
 
-from fastapi import FastAPI
+import hmac
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from app.core.config import get_settings
 from app.api.v1.router import api_router
 api = FastAPI(title='DocuMind AI', description='Intelligent document management, semantic search, and retrieval-augmented generation', version='1.0.0')
@@ -15,6 +17,21 @@ allowed_origins = {
 # is missing or stale. Additional preview origins remain configurable.
 allowed_origins.add('https://docuai-jet.vercel.app')
 api.include_router(api_router, prefix=get_settings().API_V1_PREFIX)
+
+@api.middleware('http')
+async def csrf_guard(request: Request, call_next):
+    """Double-submit CSRF protection for browser mutations using cookies."""
+    if request.method in {'GET', 'HEAD', 'OPTIONS', 'TRACE'}:
+        return await call_next(request)
+    path = request.url.path
+    external_callbacks = {'/api/v1/billing/mpesa/callback', '/api/v1/channels/whatsapp/webhook'}
+    if path in external_callbacks:
+        return await call_next(request)
+    cookie_value = request.cookies.get('documind_csrf')
+    header_value = request.headers.get('X-CSRF-Token')
+    if not cookie_value or not header_value or not hmac.compare_digest(cookie_value, header_value):
+        return JSONResponse({'detail': 'Request verification failed. Refresh the page and try again.'}, status_code=403)
+    return await call_next(request)
 
 @api.get('/')
 def home():

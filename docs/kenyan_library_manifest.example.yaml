@@ -1,0 +1,45 @@
+# Replace every placeholder with a direct official document URL you have checked.
+# This is intentionally not populated with guessed or scraped URLs.
+collections:
+  - slug: tax
+    name: Tax
+    category: tax
+    description: Official tax laws and guidance.
+    documents:
+      - title: REPLACE_WITH_OFFICIAL_DOCUMENT_TITLE
+        short_name: replace-with-stable-document-id
+        source_url: REPLACE_WITH_DIRECT_OFFICIAL_HTTPS_FILE_URL
+        publisher: REPLACE_WITH_PUBLISHER
+        version_label: REPLACE_WITH_VERSION_OR_EFFECTIVE_DATE
+        document_date: null
+        effective_from: null
+  - slug: employment
+    name: Employment
+    category: employment
+    description: Official employment laws and guidance.
+    documents: []
+  - slug: procurement
+    name: Procurement
+    category: procurement
+    description: Official procurement laws and guidance.
+    documents: []
+  - slug: companies
+    name: Companies
+    category: companies
+    description: Official company laws and guidance.
+    documents: []
+  - slug: data-protection
+    name: Data protection
+    category: data-protection
+    description: Official data-protection laws and guidance.
+    documents: []
+  - slug: education
+    name: Education
+    category: education
+    description: Official education laws and guidance.
+    documents: []
+  - slug: courts
+    name: Courts
+    category: courts
+    description: Official court materials.
+    documents: []

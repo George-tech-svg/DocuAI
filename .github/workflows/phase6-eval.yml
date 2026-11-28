@@ -1,0 +1,38 @@
+name: Phase 6 grounded answer evaluation
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'backend/app/services/**'
+      - 'backend/evals/**'
+      - 'backend/tests/test_language_trust.py'
+      - '.github/workflows/phase6-eval.yml'
+  push:
+    paths:
+      - 'backend/app/services/**'
+      - 'backend/evals/**'
+      - 'backend/tests/test_language_trust.py'
+      - '.github/workflows/phase6-eval.yml'
+
+jobs:
+  answer-evaluation:
+    if: ${{ secrets.DEEPSEEK_API_KEY != '' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Run bilingual grounded answer evaluation
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          EVAL_MIN_CITATION: '0.90'
+          EVAL_MIN_REFUSAL: '0.90'
+          EVAL_MAX_P95_MS: '45000'
+        run: python -m evals.run_eval
+

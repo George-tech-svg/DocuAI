@@ -9,14 +9,16 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.models.entities import DocumentEvent, NotificationPreference, Reminder, User
+from app.models.entities import WhatsAppLink, WhatsAppMessage, MessageUsage
+from app.services.whatsapp_provider import provider_from_env
 
 class NotificationChannel(Protocol):
     name: str
-    def send(self, user: User, event: DocumentEvent, idempotency_key: str) -> None: ...
+    def send(self, db: Session, user: User, event: DocumentEvent, idempotency_key: str) -> None: ...
 
 class SMTPEmailChannel:
     name = 'email'
-    def send(self, user: User, event: DocumentEvent, idempotency_key: str) -> None:
+    def send(self, db: Session, user: User, event: DocumentEvent, idempotency_key: str) -> None:
         host = os.getenv('SMTP_HOST', '').strip()
         if not host:
             raise RuntimeError('Email reminders are not configured. Add SMTP_HOST and SMTP credentials to the backend environment.')
@@ -36,7 +38,35 @@ class SMTPEmailChannel:
                 client.login(username, password)
             client.send_message(message)
 
-CHANNELS: dict[str, NotificationChannel] = {'email': SMTPEmailChannel()}
+class BirdWhatsAppChannel:
+    name = 'whatsapp'
+    def send(self, db: Session, user: User, event: DocumentEvent, idempotency_key: str) -> None:
+        from app.core.config import get_settings
+        from app.models.entities import Document, WhatsAppLink, WhatsAppMessage, MessageUsage
+        from sqlalchemy import select
+        link = db.get(WhatsAppLink, user.id)
+        if not link or not link.active or not link.opted_in_at or link.opted_out_at:
+            raise RuntimeError('WhatsApp reminders require a linked number with current opt-in.')
+        document = db.get(Document, event.document_id)
+        body = f'Reminder: {event.title}\nDue: {event.due_at:%d %b %Y}\nSource: {document.original_filename if document else "Document"}, page {event.source_page or "?"}. Check this date against the original document.'
+        inbound_recent = bool(link.last_inbound_at and (datetime.now(timezone.utc) - link.last_inbound_at) <= timedelta(hours=24))
+        provider = provider_from_env()
+        if inbound_recent:
+            response = provider.send_text(link.phone_e164, body[:1200], f'reminder-{idempotency_key}')
+        else:
+            slug = get_settings().BIRD_WHATSAPP_REMINDER_TEMPLATE_SLUG.strip()
+            if not slug:
+                raise RuntimeError('WhatsApp reminder template is not configured. Set BIRD_WHATSAPP_REMINDER_TEMPLATE_SLUG after Bird/Meta approval.')
+            response = provider.send_template(link.phone_e164, slug, 'en', {'title': event.title, 'date': event.due_at.strftime('%d %b %Y'), 'document': document.original_filename if document else 'Document', 'page': event.source_page or 'unknown'}, f'reminder-{idempotency_key}')
+        payload = response.get('data', response)
+        provider_id = str(payload.get('id') or payload.get('whatsapp_id') or '') or None
+        outgoing = WhatsAppMessage(provider_message_id=provider_id, user_id=user.id, phone_e164=link.phone_e164,
+            direction='outbound', kind='template' if not inbound_recent else 'text', text=body,
+            status='sent', provider_payload=response, idempotency_key=f'reminder-{idempotency_key}')
+        db.add(outgoing); db.flush()
+        db.add(MessageUsage(whatsapp_message_id=outgoing.id, user_id=user.id, provider_message_id=provider_id, units=1, cost_status='pending' if provider_id else 'unknown'))
+
+CHANNELS: dict[str, NotificationChannel] = {'email': SMTPEmailChannel(), 'whatsapp': BirdWhatsAppChannel()}
 
 def _quiet_end(now: datetime, preference: NotificationPreference) -> datetime | None:
     if not preference.quiet_start or not preference.quiet_end:
@@ -95,7 +125,7 @@ def send_due_reminders(db: Session, now: datetime | None = None) -> int:
                 adapter = CHANNELS.get(reminder.channel)
                 if adapter is None:
                     raise RuntimeError(f'The {reminder.channel} reminder channel is not available.')
-                adapter.send(user, event, str(reminder.id))
+                adapter.send(db, user, event, str(reminder.id))
             reminder.status = 'sent'
             reminder.sent_at = now
             reminder.error = None
@@ -108,3 +138,26 @@ def send_due_reminders(db: Session, now: datetime | None = None) -> int:
             reminder.next_attempt_at = now + timedelta(minutes=min(5 * (2 ** (reminder.attempts - 1)), 360))
         db.commit()
     return sent
+
+def reconcile_whatsapp_usage(db: Session, limit: int = 100) -> int:
+    """Refresh pending provider-reported message charges; never infer a zero cost."""
+    from app.models.entities import MessageUsage
+    rows = db.scalars(select(MessageUsage).where(MessageUsage.cost_status == 'pending', MessageUsage.provider_message_id.is_not(None)).order_by(MessageUsage.created_at).with_for_update(skip_locked=True).limit(limit)).all()
+    updated = 0
+    for row in rows:
+        try:
+            payload = provider_from_env().message_cost(row.provider_message_id)
+            data = payload.get('data', payload)
+            cost = data.get('cost') or {}
+            amount = cost.get('amount')
+            currency = cost.get('currency_code') or cost.get('currency')
+            if amount is not None:
+                row.cost_amount = amount
+                row.currency = currency
+                row.cost_status = 'reconciled'
+                updated += 1
+        except Exception:
+            # Leave pending for a later pass; Bird may not have priced an accepted send yet.
+            continue
+    db.commit()
+    return updated

@@ -152,7 +152,7 @@ def extract_events_for_document(db: Session, document_id):
             duplicate = db.scalar(select(DocumentEvent.id).where(DocumentEvent.document_id == document.id, DocumentEvent.due_at == due_at, DocumentEvent.source_excerpt == excerpt).limit(1))
             if duplicate:
                 continue
-            db.add(DocumentEvent(document_id=document.id, user_id=kb.user_id, kind=kind, title=title, due_at=due_at, source_page=page, source_excerpt=excerpt.strip(), confidence=confidence, status='suggested'))
+            db.add(DocumentEvent(document_id=document.id, user_id=kb.user_id, organization_id=kb.organization_id, kind=kind, title=title, due_at=due_at, source_page=page, source_excerpt=excerpt.strip(), confidence=confidence, status='suggested'))
             added += 1
     db.commit()
     return added

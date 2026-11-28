@@ -4,12 +4,14 @@ import secrets
 from zoneinfo import ZoneInfo
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from app.api.dependencies import current_user
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.entities import MpesaPayment, PaymentRecoveryRequest, Subscription, SubscriptionPlan, User
+from app.models.entities import Organization, OrganizationMember
+from app.services.permissions import can
 from app.schemas.billing import BillingStatus, CheckoutRequest, CheckoutResponse, PaymentRecoveryCreate, PaymentRecoveryView, PaymentView, PlanResponse, SubscriptionView
 from app.services.mpesa import initiate_stk_push, mpesa_ready, normalize_phone
 
@@ -30,7 +32,7 @@ def plans(db: Session=Depends(get_db)):
 def my_billing(user: User=Depends(current_user), db: Session=Depends(get_db)):
     now = datetime.now(timezone.utc)
     expired = db.scalars(select(Subscription).where(
-        Subscription.user_id == user.id, Subscription.status == 'active',
+        Subscription.user_id == user.id, Subscription.organization_id.is_(None), Subscription.status == 'active',
         Subscription.expires_at <= now,
     )).all()
     for item in expired:
@@ -38,12 +40,12 @@ def my_billing(user: User=Depends(current_user), db: Session=Depends(get_db)):
     if expired:
         db.commit()
     subscription = db.scalar(select(Subscription).where(
-        Subscription.user_id == user.id, Subscription.status == 'active',
+        Subscription.user_id == user.id, Subscription.organization_id.is_(None), Subscription.status == 'active',
         Subscription.expires_at > now,
     ).order_by(Subscription.expires_at.desc()))
     if subscription is None:
         subscription = db.scalar(select(Subscription).where(
-            Subscription.user_id == user.id, Subscription.status == 'pending',
+            Subscription.user_id == user.id, Subscription.organization_id.is_(None), Subscription.status == 'pending',
         ).order_by(Subscription.created_at.desc()))
     payments = db.scalars(select(MpesaPayment).where(MpesaPayment.user_id == user.id)
         .order_by(MpesaPayment.created_at.desc()).limit(20)).all()
@@ -95,6 +97,15 @@ def create_payment_recovery_request(data: PaymentRecoveryCreate, user: User=Depe
 
 @router.post('/billing/checkout', response_model=CheckoutResponse, status_code=202)
 async def checkout(data: CheckoutRequest, user: User=Depends(current_user), db: Session=Depends(get_db)):
+    if data.organization_id:
+        organization = db.get(Organization, data.organization_id)
+        if not organization or not can(user, 'manage_billing', organization, db):
+            raise HTTPException(404, 'Organization not found or you cannot manage its billing.')
+        current_seats = db.scalar(select(func.count(OrganizationMember.id)).where(OrganizationMember.organization_id == organization.id)) or 0
+        if data.seat_limit is None or data.seat_limit < current_seats:
+            raise HTTPException(422, f'Seat limit must cover all current members ({current_seats}).')
+    elif data.seat_limit is not None:
+        raise HTTPException(422, 'Seat limits are only used for organization subscriptions.')
     plan = db.scalar(select(SubscriptionPlan).where(
         SubscriptionPlan.id == data.plan_id, SubscriptionPlan.is_active.is_(True)))
     if not plan:
@@ -108,7 +119,7 @@ async def checkout(data: CheckoutRequest, user: User=Depends(current_user), db: 
     if recent_pending:
         raise HTTPException(409, 'An M-Pesa prompt is already pending. Complete or wait for that request before trying again.')
     phone = normalize_phone(data.phone_number)
-    subscription = Subscription(user_id=user.id, plan_id=plan.id, status='pending')
+    subscription = Subscription(user_id=user.id, organization_id=data.organization_id, seat_limit=data.seat_limit, plan_id=plan.id, status='pending')
     db.add(subscription)
     db.flush()
     payment = MpesaPayment(
@@ -173,10 +184,14 @@ async def mpesa_callback(callback_token: str, request: Request, db: Session=Depe
         plan = db.get(SubscriptionPlan, subscription.plan_id) if subscription else None
         if subscription and plan:
             now = datetime.now(timezone.utc)
-            current = db.scalar(select(Subscription).where(
-                Subscription.user_id == payment.user_id,
+            current_query = select(Subscription).where(
                 Subscription.status == 'active', Subscription.expires_at > now,
-            ).order_by(Subscription.expires_at.desc()).with_for_update())
+            )
+            if subscription and subscription.organization_id:
+                current_query = current_query.where(Subscription.organization_id == subscription.organization_id)
+            else:
+                current_query = current_query.where(Subscription.user_id == payment.user_id, Subscription.organization_id.is_(None))
+            current = db.scalar(current_query.order_by(Subscription.expires_at.desc()).with_for_update())
             starts = current.expires_at if current else now
             subscription.status = 'active'
             subscription.starts_at = starts

@@ -2,7 +2,7 @@
 
 **Document purpose:** a practical guide to the product, features, architecture, setup, and operational limits currently represented in this repository.
 
-**Last reviewed:** 27 November 2026  
+**Last reviewed:** 28 November 2026
 **Repository baseline reviewed:** `956d8c9` (`Refresh full system documentation`).
 
 > This guide describes the code in this repository. A feature can be implemented here and still need valid provider credentials, a database migration, a Vercel redeploy, or setup in a provider console before it works in production. No secret values belong in this document.
@@ -23,6 +23,7 @@
 12. [Limits and known operational considerations](#12-limits-and-known-operational-considerations)
 13. [Repository map](#13-repository-map)
 14. [Operational checklist](#14-operational-checklist)
+15. [Phase 6: language, grounding, confidence, and feedback](#phase-6-language-grounding-confidence-and-feedback)
 
 ## 1. Product summary
 
@@ -427,4 +428,253 @@ Email delivery uses an SMTP adapter with a stable per-reminder Message-ID and da
 ### Helpful support information (safe to share)
 
 When reporting a problem, provide the deployment URL, approximate time, route/status code, non-secret error message, and relevant Vercel log lines. Do not send passwords, JWTs, `.env` files, API keys, consumer secrets, passkeys, or the administrator bootstrap code.
+
+## Phase 3: shared Kenyan public library
+
+The Kenyan library is a shared, read-only reference area for signed-in members. Library-only chat is available to every signed-in user even when private document chat is subscription-gated. Combined folder + library chat retains the subscription requirement because it searches private user uploads. It has independent `library_collections`, `library_documents`, and `library_chunks` tables. Library vectors use the same 384 dimensions as private document passages, and a PostgreSQL GIN full-text index supports keyword lookup. Library chunks never enter the member's private document listing or private document retrieval query. Member APIs expose only current, ready library documents and search results. Write and re-index endpoints are guarded by the platform administrator dependency.
+
+Collections use these categories: tax, employment, procurement, companies, data-protection, education, and courts. Documents retain publisher, official source URL, document/effective dates, version label, SHA-256 content hash, current/historical status, processing status, OCR metadata, and page/chunk counts. A changed source creates a new version and marks the former version historical. `library_updates` stores collection-change records populated by durable worker jobs.
+
+### Ingestion and source permissions
+
+The sample manifest is `docs/kenyan_library_manifest.example.yaml`. It deliberately contains placeholders only. Replace them with a direct HTTPS URL to a PDF, TXT, or DOCX file that you are authorized to use. The CLI is `python scripts/ingest_library.py --manifest <path-to-yaml>` and reads the same `DATABASE_URL` as the application. It downloads direct files only; it does not crawl pages, follow redirects, or scrape a publisher. Admins can upload an authorized PDF/TXT/DOCX original through the Library section and supply its official source link, or use the manifest/URL queue. Long indexing is performed by the Render worker through the Postgres job queue.
+
+Before adding a source, check the publisher's copyright/licence notice and terms of use for reproduction, storage, text extraction, embedding, derived search, and public redistribution. Check whether government open-data or open-access terms apply and whether attribution, version/date display, or non-commercial-use conditions apply. Also review robots/access rules and any stated restrictions on automated downloads; a document being publicly viewable does not itself grant reuse rights. Confirm that the URL is an official source and links directly to the intended file. Keep the official URL and version metadata so users can verify the current text. Do not ingest a document when its terms prohibit this use; ask the publisher for permission where needed.
+
+The CLI is intended for trusted operator use. It validates HTTPS and rejects local/private network hosts, caps files at 50 MB, checks the downloaded content type/signature, hashes content, uses Phase 1 text extraction/OCR, chunks, embeds, and saves. Repeated identical content is skipped/restored rather than duplicated. YAML is parsed with `safe_load`; do not run untrusted manifests. Store no credentials in the manifest.
+
+### Library chat behavior
+
+The chat scopes are `document`, `folder`, `library`, and `folder_library`. Library scope can target one collection or the entire library. Combined scope searches an owned private folder and selected/all current library collections in one request. Vector and PostgreSQL full-text candidates are fused with reciprocal-rank scoring and capped at five passages. Each library source carries its official title, version label, page, and section heading when detected. A title or section label is not a substitute for checking the linked official document; section detection comes from text patterns and can be absent or imperfect.
+
+For library and combined-library answers, the model is instructed to use retrieved passages only and never answer Kenyan law or tax questions from its own memory. The interface displays: “Information only. Not legal or tax advice. Check the official source.” If no passage supports a library-only question, the system returns an explicit no-source answer without calling the model. Combined scope may still use retrieved private-folder passages, which are cited separately. Conversations save the library collection scope so reopening restores it.
+
+### Phase 3 deployment and verification
+
+- [ ] Apply Alembic migration `0016` to the production database before deploying API/worker code.
+- [ ] Deploy the same commit to Vercel and the long-lived Render Background Worker; use the same `DATABASE_URL` for both.
+- [ ] Verify the worker can access the configured embedding runtime, OCR system packages, database, and the official URLs you approved.
+- [ ] Fill in `docs/kenyan_library_manifest.example.yaml` (or use the admin Library panel) only with authorized official direct file URLs and accurate titles, publishers, versions, and dates.
+- [ ] Run the ingestion CLI or queue an admin ingestion, then check job status and confirm the document becomes current/ready with chunks and a content hash.
+- [ ] Verify member API calls cannot create/replace/re-index library records, while a platform admin can. Confirm public document lists include only ready current versions.
+- [ ] Search a known term and ask a question whose answer is present, then ask one absent from the selected passages. Verify source title, section, page, version, legal information banner, and abstention behavior.
+- [ ] Ask a combined folder + library question and verify private and official library sources remain separately attributed.
+- [ ] Ingest a changed version; confirm the old version remains available as history, becomes non-current, and a `library_updates` record is written by its job.
+
+Publisher terms and licences vary by document. The project does not assume that a public URL grants permission to copy, index, embed, or redistribute its contents.
+
+## Phase 4: organization workspaces
+
+Migration `0017` adds organizations without moving or rewriting existing user data. Each existing knowledge base keeps its existing `user_id` and receives a nullable `organization_id`, so all existing folders remain personal. Organization membership uses the `owner`, `admin`, `member`, and `viewer` roles. Invites store only a SHA-256 token hash, expire after seven days, and can be accepted only by an authenticated account whose email matches the invitation. Configure the backend SMTP variables listed in Phase 2 to send invitations.
+
+All resource authorization is centralized in `backend/app/services/permissions.py` through `can(user, action, resource, db)`. Personal folders retain owner-only access. Organization viewers can read and chat; members can additionally upload; admins can manage folders and members; owners can also manage billing and delete the organization. Private conversations are accessible to their creator, while shared conversations are available to organization members. A conversation can be shared only when it belongs to an organization folder. The backend checks permissions even if a user bypasses or modifies the frontend.
+
+The workspace switcher separates personal folders from the selected organization. Organization owners and admins can create folders and manage folder contents. Members can upload and chat in organization folders; viewers cannot upload. Organization documents record the uploading user, and messages record the asking user so shared work displays its actor. A conversation starts private by default and can be made shared from the chat panel. Existing private conversations remain private unless changed.
+
+An organization can buy a subscription with a seat limit. The organization owner enters a phone number and seat count from its organization page. Once the M-Pesa callback confirms payment, the active organization subscription covers members while the seat limit covers the current membership count. The same subscription gate still accepts a user's personal active subscription. Existing personal plans are unchanged. Organization billing access is owner-only.
+
+`audit_events` is an append-only activity table enforced by a PostgreSQL trigger that rejects updates and deletes. It records organization creation, folder creation/deletion, document uploads/deletions, invitations, member joins/removals/role changes, exports, and organization deletion with the actor, timestamp, resource, and relevant details. The activity page displays recent records. The organization identifier in audit rows intentionally has no foreign key so deleting an organization does not erase or mutate its audit history.
+
+### Phase 4 migration and configuration
+
+Apply Alembic migration `0017` after `0016` on the same Postgres database used by the API and worker. The migration adds nullable organization references, a nullable uploader and message actor for compatibility with existing rows, private conversation visibility by default, and organization membership/invitation/subscription/audit tables. Existing personal subscriptions have `organization_id = NULL` and continue to pass the personal plan gate.
+
+Set the backend-only SMTP variables from Phase 2 for invitations, and set `FRONTEND_ORIGIN` to the app origin so the emailed invitation link returns to the correct app. No new external service is required for organization membership or audit. Organization subscription checkout reuses the existing Daraja credentials, plan table, payment callback, and subscription system.
+
+### Phase 4 verification checklist
+
+- [ ] Apply migration `0017` after `0016`; verify existing folders, conversations, and personal subscriptions still load.
+- [ ] Test each role against read, chat, upload, folder management, member management, billing, and organization deletion; verify backend denial as well as disabled/hidden UI actions.
+- [ ] Create a personal folder and an organization folder; verify the workspace switcher filters folders correctly and membership grants access only to the selected organization.
+- [ ] Invite a new and an existing user; accept with the invited email, reject a different email, and verify expired/revoked links cannot be reused.
+- [ ] Upload a file as an organization member and confirm the uploader is displayed. Ask in a private conversation and verify other members cannot read it; switch to shared and verify members see the asker and messages.
+- [ ] Verify viewers can chat but cannot upload, members can upload but cannot administer folders/members, admins can manage folders/members but cannot manage billing/delete the organization, and owners can do all documented owner actions.
+- [ ] Complete a sandbox organization payment with a seat count that covers its members; verify members gain access and an undersized seat limit is rejected. Verify the existing personal plan still works.
+- [ ] Verify upload, document/folder deletion, membership changes, exports, and organization deletion are recorded in `audit_events`, and direct update/delete statements against audit rows are rejected by the database trigger.
+- [ ] Send an organization invitation and check SMTP delivery, link origin, seven-day expiry, and invited-email matching.
+
+The migration does not require SQL backfills: legacy folder ownership remains personal, and organization identifiers are null for all existing rows. The organization subscription seat limit is checked against the active member count when a subscription is purchased and when an invitation is accepted.
+
+## Phase 5: WhatsApp through Bird
+
+Migration `0018` adds WhatsApp links and one-time link challenges, the inbound/outbound message ledger, append-only opt-in/out history, document-upload linkage, and `message_usage`. The integration is behind `backend/app/services/whatsapp_provider.py`'s `WhatsAppProvider` contract. Bird is the current adapter; replacing it should not require changing message handling or reminder scheduling.
+
+### Server configuration
+
+Set these on the backend API and worker (Render), not in Vite or browser environment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `BIRD_API_KEY` | Bird API bearer credential. The key region selects the API host. |
+| `BIRD_WORKSPACE_ID` | Validate the workspace on signed inbound events. |
+| `BIRD_WHATSAPP_NUMBER_ID` | Bird WhatsApp sender number ID, used to resolve its E.164 number. |
+| `BIRD_WEBHOOK_SECRET` | Standard Webhooks signing secret (`whsec_...`) for inbound verification. |
+| `BIRD_WHATSAPP_OTP_TEMPLATE_SLUG` | Defaults to Bird-managed `bird_otp` for number-link codes. |
+| `BIRD_WHATSAPP_REMINDER_TEMPLATE_SLUG` | Your own approved reminder template slug, required for reminders outside a 24-hour service window. |
+| `BIRD_WHATSAPP_NOTIFICATION_TEMPLATE_SLUG` | Your approved general notification template slug, required for document-ready messages outside the service window. |
+
+The webhook URL to register in Bird is `https://<backend-host>/api/v1/channels/whatsapp/webhook`; subscribe it to `whatsapp.received` and message status events. The handler verifies `webhook-id`, `webhook-timestamp`, and `webhook-signature` over the untouched request bytes, rejects signatures older than five minutes, checks the workspace ID, persists and deduplicates the event, then queues processing. It performs no LLM or media work in the webhook request. The worker and API must use the same Postgres `DATABASE_URL`.
+
+### Linking, consent, and commands
+
+In **Account settings → WhatsApp**, a signed-in user provides an international E.164 phone number, explicitly consents, requests a six-digit code, and confirms it in the app. The code hash (not the code) is stored and expires after ten minutes; requests are capped at five per account per day. A user can also reply `LINK <code>` to complete the pending challenge from the phone. A phone number can be actively linked to only one account. Unlinking revokes access immediately. `STOP`, `UNSUBSCRIBE`, and `QUIT` are recorded and disable processing synchronously in the webhook; `START`, `UNSTOP`, and `SUBSCRIBE` restore opt-in for an already linked number. Consent changes are append-only in `whatsapp_consent_events`. An unlinked phone receives only a sign-up/linking instruction and can never retrieve personal or organization documents.
+
+Commands: `help`, `folders`, `use <folder name>`, `library`, `upcoming`, `MORE`, `STOP`, and `START`. A text question defaults to the user's last selected folder or the shared library. Folder resolution and chat authorization use the central organization permission function. Answers use retrieved passages and source names/pages, follow the question's language, and are capped around 1,200 characters with a web-app link for more. Library answers are grounded only in current library chunks and include the visible legal/tax information notice. The initial rate limits are 10 inbound messages per minute and 100 per day per linked user; over-limit messages are recorded as rate-limited without generating a paid reply.
+
+Photos and documents are fetched from Bird only in the worker, bounded by the configured `MAX_UPLOAD_MB`, validated with the existing upload validator, stored in Cloudinary, and sent through the Phase 1 index job. The worker replies “Received. I will tell you when it is ready.” Indexing and Phase 2 date extraction then trigger a short summary/date notification. Failures return a readable attachment error. Supported media follows the current Phase 1 upload formats and 10 MB default cap. WhatsApp document uploads require the user to have selected a folder in the web app and have upload permission for it.
+
+### 24-hour service window and templates
+
+An inbound WhatsApp message opens/resets the customer service window for 24 hours. Free-form text is sent only while that window is open. Outside it, the app requires an explicitly configured approved Bird/Meta template; it will not send free-form reminders or notifications. Reminder preferences permit WhatsApp only after the account is linked and opted in. `message_usage` records each outbound message, provider ID, user, units, amount/currency when available, and cost reconciliation status. A worker job periodically reads Bird message cost details; an unknown or not-yet-reported amount stays pending rather than being represented as free. The ledger is a cost source for later billing, not itself a charge to the user.
+
+Template drafts to submit (these are **drafts only**, not approved):
+
+**Utility reminder, English** (named variables: `title`, `date`, `document`, `page`):
+
+> DocuMind reminder: {{title}} is due on {{date}}. Source: {{document}}, page {{page}}. Check this date against the original document.
+
+**Utility reminder, Kiswahili** (same named variables):
+
+> Kikumbusho cha DocuMind: {{title}} kina tarehe ya mwisho {{date}}. Chanzo: {{document}}, ukurasa {{page}}. Hakiki tarehe hii kwenye hati asili.
+
+**Utility upcoming-dates digest, English** (named variables: `summary`, `link`):
+
+> Your upcoming dates in DocuMind: {{summary}}. Open your workspace to review the source documents: {{link}}.
+
+**Utility upcoming-dates digest, Kiswahili** (named variables: `summary`, `link`):
+
+> Tarehe zako zijazo kwenye DocuMind: {{summary}}. Fungua nafasi yako ya kazi ili uhakiki hati chanzo: {{link}}.
+
+The current app schedules individual reminders; a digest sender is not implemented yet. The digest text is prepared for a future scheduled digest. Meta/Bird determine the final category and approval status; do not treat “Utility” in these drafts as a guaranteed category.
+
+### Bird / Meta setup checklist
+
+1. In Bird, connect the WhatsApp Business Account and an owned/authorized phone number. Complete any Meta Business Portfolio/business verification and phone verification steps Bird requests. Confirm the number can send and receive in the intended region.
+2. Create a Bird API key with WhatsApp send/read access; copy the workspace ID, WhatsApp number ID, and webhook signing secret. Put all values only in Render backend API and Background Worker environment settings. Redeploy both services after changing secrets.
+3. Create the webhook endpoint shown above, subscribe to inbound `whatsapp.received` and outbound message status events, and copy its `whsec_` secret into `BIRD_WEBHOOK_SECRET`. Use Bird's signed test event, then verify it is persisted once and produces a queued Postgres job.
+4. In Bird's template catalog, verify the managed `bird_otp` template and its language are available. Do not submit or represent the managed OTP template as an app-created/approved template.
+5. Submit each reminder/notification template as a separate language version. Supply the exact template name/slug, intended category, body text, variable names in order with realistic sample values, language, intended use (user-confirmed document date reminder or requested account service notification), and relevant opt-in/consent wording. Include the web-app domain in the business profile. Keep evidence of user consent and STOP handling.
+6. Meta/Bird may ask for the legal business name, public display name, website and contact details, business address/country, Business Portfolio/WABA admin access, business verification evidence, ownership/authorization of the phone number, and sample messages/context. Provide the exact materials requested in the Bird onboarding panel; requirements vary by account and market.
+7. Wait for an explicit approved/active status in Bird before setting the reminder or notification template slug in Render. Set the slug to the exact catalog slug and make each template's variable names match the values sent by the backend. A template being submitted is not approval.
+8. Run the checks below, including an inbound message, duplicate webhook replay, STOP/START, an unlinked sender, a document upload, a reminder within 24 hours, and an approved-template delivery outside the window. Inspect `whatsapp_messages` and `message_usage`; reconcile costs from Bird's message record rather than assuming the initial send response includes a final charge.
+
+Official implementation references: [Bird webhook signature verification](https://bird.com/explained/platform/how-do-i-verify-a-webhook-signature), [Bird WhatsApp inbound webhooks](https://bird.com/en-gb/docs/guides/whatsapp/webhooks/messages), [Bird WhatsApp sending and service windows](https://bird.com/docs/guides/whatsapp/sending-whatsapp), [Bird WhatsApp templates](https://bird.com/docs/guides/whatsapp/templates). Bird's API uses Standard Webhooks signatures over raw request bytes and separates free-form service messages from pre-approved templates.
+
+### Phase 5 verification checklist
+
+- [ ] Apply Alembic migration `0018` after `0017` to the same Postgres database used by API and worker.
+- [ ] Configure Bird server-side secrets, deploy API and long-lived worker, and register the signed inbound/status webhook.
+- [ ] Unit-test valid, invalid, stale, and rotated webhook signatures; verify raw bytes are used and webhook ID/provider message ID duplicates do not create two inbound jobs.
+- [ ] Link a number with code in the app and via `LINK <code>`; reject wrong, expired, over-attempt, and already-linked numbers; verify the raw code is never stored.
+- [ ] Send a question from an unlinked number and verify the response does not include any account/document data. Repeat after unlink.
+- [ ] Send STOP and confirm the opt-out timestamp/history is committed before webhook success; send a question after STOP and verify no retrieval or answer; send START and verify opt-in resumes.
+- [ ] Verify folder permissions isolate personal and organization documents, `use <name>` changes only to an accessible folder, citations identify document/page, library answers use current retrieved library chunks, and rates are capped.
+- [ ] Send a PDF/photo, verify Bird media download limits, Cloudinary storage, queued Phase 1 indexing, ready notification and dates. Exercise invalid and poison-pill media and verify a readable response/job error.
+- [ ] Confirm a free-form reply is sent only in the 24-hour window and an out-of-window reminder/document notification uses only a configured approved template. No template slug means delivery fails visibly and retryably.
+- [ ] Confirm reminders respect notification opt-in and quiet hours; verify each outbound Bird message has a `message_usage` row and provider-reported charges reconcile without defaulting missing amounts to zero.
+
+The repository does not run a live Bird/Meta send test automatically. External credentials, a connected WhatsApp sender, template approvals, and phone access are required for end-to-end verification.
+
+## Phase 6: language, grounding, confidence, and feedback
+
+### Language behavior
+
+`backend/app/services/language.py` uses a small word-marker heuristic to label a question English (`en`), Kiswahili (`sw`), or mixed/Sheng (`mixed`). This is not a general language-identification model: very short questions, uncommon dialect spellings, and heavily code-switched text can be mislabeled. Under **Settings → Answer language**, members can select Automatic, English, or Kiswahili. Automatic follows the detected language; a prompt such as “Translate this to Kiswahili” or “Tafsiri hii kwa English” explicitly requests translation.
+
+When the user's wording is Kiswahili or mixed, the backend asks DeepSeek to produce an English-only retrieval query, preserving names, dates, amounts, and references. If that request fails or returns empty text, the original query is used. The original question remains the one sent for answer generation. Answers are written in the detected or selected language; translated answers retain source titles and numbered citations. English documents can therefore be summarized, explained, or translated into Kiswahili when asked. The source excerpt stays in its original language in the source display.
+
+The app uses the configured DeepSeek API model, not a dedicated Swahili model. Query translation can improve matching against English documents but does not make retrieval multilingual by itself, and it can mistranslate Sheng, rare terms, names, or technical vocabulary. Answer quality and grammar in Kiswahili vary by model release. The bundled sample evaluation is synthetic and is not evidence of production quality; replace it with reviewed, permission-cleared bilingual examples before relying on a score.
+
+### Grounding, citations, and confidence
+
+The answer prompt treats retrieved passages as untrusted evidence and explicitly tells the model to ignore instructions embedded in a document, answer only from those passages, cite factual claims with `[n]`, and state when evidence is missing. `trusted_answers.py` checks that citations point to supplied passages and that detected dates and numbers occur in the cited passage. If a check fails, the model is retried once with stricter instructions. If the second check fails, the exact safe fallback is `I could not find a reliable answer in your documents.`
+
+This is a practical guardrail, not a proof that every claim is true: it does not semantically prove that prose is entailed by a citation, and number/date matching can reject legitimate paraphrases or miss differently formatted values. A prompt can also fail to recognize some adversarial document content. Users should inspect the displayed source text, page, and linked official reference for consequential decisions. Library and legal, tax, or medical-type content receives a short professional-advice disclaimer.
+
+Every generated answer includes a retrieval-match label: **Strong match**, **Partial match**, or **Weak match**. The numeric score is a heuristic from reciprocal-rank fusion and agreement between keyword and vector rankings; it is not a calibrated probability, a factuality score, or a guarantee. Library-only WhatsApp answers use vector ranking and have a deliberately conservative match label. WhatsApp answers now use the same citation/number checks and one-retry fallback as web chat, within its short-message limit.
+
+### Answer feedback and admin review
+
+Members can mark an answer Helpful, Not helpful, or Report a wrong answer. `POST /api/v1/messages/{assistant_message_id}/feedback` stores the question, answer, source JSON, model version, rating, and optional comment in `answer_feedback`. A member can update their rating for their own answer; feedback is tied to the authenticated user. The platform admin console's **Answer reports** tab lists reports and their saved source context; an administrator can mark a report reviewed or resolved with an optional note. Migration `0019` adds the answer-language preference and feedback table.
+
+### Evaluation harness and CI
+
+`backend/evals/dataset.json` contains 40 synthetic English and Kiswahili cases and five short sample passages. There are answerable questions with expected passage IDs and no-answer questions that must produce the safe fallback. From the backend directory, run:
+
+```powershell
+.\.venv\Scripts\python.exe -m evals.run_eval
+```
+
+This calls the configured DeepSeek model and prints each case plus citation accuracy, refusal accuracy, mean latency, and p95 latency. It needs `DEEPSEEK_API_KEY`; it is an online integration evaluation, not an offline unit test. The default CI gates are 90% citation accuracy, 90% refusal accuracy, and p95 latency at or below 45 seconds. The GitHub Actions job runs when `DEEPSEEK_API_KEY` is configured as a repository or organization Actions secret; without that secret the model evaluation job is skipped. Tune thresholds only with a reviewed dataset and a reasoned baseline. The dataset deliberately contains no real legal, tax, medical, or personal records.
+
+### Phase 6 deployment and verification
+
+- [ ] Apply Alembic migration `0019` after `0018` to production before deploying API code.
+- [ ] Redeploy the API and frontend; keep `DEEPSEEK_API_KEY` server-side. No new provider secret is introduced for language detection or feedback.
+- [ ] Select Automatic, English, and Kiswahili in settings; test English questions on English files, Kiswahili questions on English files, Sheng/mixed wording, and explicit translation requests. Check that retrieval terms are translated while displayed source excerpts remain unchanged.
+- [ ] Test injected instructions inside a file, missing evidence, invalid citation numbers, wrong numeric/date claims, and a valid cited answer. Confirm one strict retry at most and the exact fallback after failed checks.
+- [ ] Confirm all three confidence labels render on new answers and reopened chat history, and explain to users that they are retrieval-match estimates.
+- [ ] Submit and update all three feedback ratings; verify only admins can list and review reports, and stored reports show the answer's original question, sources, and model version.
+- [ ] Run the 40-case model evaluation with a valid key. Treat the printed results as a smoke signal only until the synthetic passages are replaced with reviewed samples representative of real English, Kiswahili, and mixed-language documents.
+
+Model limitations: no in-repository benchmark establishes the configured DeepSeek model's Kiswahili accuracy; the simple language detector and English-query translation are fallible, and citations plus lexical number/date checks cannot guarantee semantic correctness. The product shows source passages so the user can verify the answer rather than presenting confidence as certainty.
+
+## Phase 7: privacy and security support
+
+This phase adds engineering controls that can support a privacy program. It does **not** certify compliance with the Kenya Data Protection Act or replace advice from a Kenyan lawyer or the ODPC.
+
+### Data rights and notices
+
+In **Settings → Privacy and data**, a signed-in user can request a background ZIP export or queue account deletion. Personal exports contain the profile/folder/document metadata, original personal files, and private conversations in JSON and PDF. Organization folders, shared conversations, and other members' private conversations are not included in an individual's personal archive. An organization owner can request an organization export of organization folders/documents and shared conversations; a member's private conversation is excluded unless it belongs to the requesting owner. Export archives are private Cloudinary assets, exposed through short-lived signed links, and scheduled to expire after seven days.
+
+Account and organization deletion require typing the exact confirmation phrase. A background job removes originals from Cloudinary before deleting corresponding database records and vectors. Failed external storage cleanup leaves the request failed/retryable rather than pretending the deletion completed. The UI explains the main categories removed. The append-only audit trail and minimal request-status records remain; raw UUID references can still be identifying, so their retention and lawful purpose need legal review. Existing financial records and provider backups also require a deliberate retention policy before making an unconditional erasure promise.
+
+Terms and privacy acceptance is saved as policy version and timestamp. Updating `TERMS_VERSION` or `PRIVACY_POLICY_VERSION` causes the app to request acceptance before protected operations continue. The **Data processing** page lists the processors currently used by the application and their engineering purpose. Company name/address and ODPC registration number remain explicit placeholders; the operator must supply verified details. The page does not claim provider data locations or contractual retention.
+
+### Organization retention and sensitive folders
+
+An organization owner/admin may set automatic deletion after 1 to 3,650 days, or leave it blank to disable. A daily worker job deletes documents and conversations older than that age and writes audit entries. Confirm that this schedule suits the organization's policy and any obligations before enabling it; the action is permanent.
+
+A sensitive folder shows a warning on upload and explains that chat can send selected passages to DeepSeek. This is warning-only: the current implementation **does not block** external AI processing. Answer, follow-up rewrite, and retrieval-query translation calls use `backend/app/services/ai_provider.py`; this adapter is the planned seam for a self-hosted/region-specific provider. No self-hosted model or regional processing is included in this phase.
+
+### Security controls
+
+- Browser login uses an HttpOnly session cookie, Secure in production by default, SameSite=Lax, plus a double-submit CSRF cookie/header on unsafe browser requests. The browser no longer stores a bearer JWT in localStorage. For local plain-HTTP development only, configure `AUTH_COOKIE_SECURE=false`.
+- Login, registration, Google auth, and chat use database-backed throttles. Repeated password failures temporarily lock the email bucket. Admins can enroll optional TOTP from **Admin → Security** and must submit its code on password/Google sign-in once enabled.
+- The upload validator enforces a configurable byte-size cap, checks file signatures, rejects selected active PDF actions/encryption, and limits DOCX archive expansion, paths, entry count, macros, and damaged archives. Raster images are dimension-capped. The worker still needs patched dependencies and OS-level isolation; these checks are not a full malware scanner.
+- Admin and organization audit events are append-only with PostgreSQL triggers. Actions include exports/deletions, plan/payment decisions, organization member/retention changes, and admin security actions. Audit details should remain minimal because they persist after an account is removed.
+- **Admin → Jobs** lists failed background work and supports retrying privacy exports, deletions, retention, and export cleanup as well as document/library jobs. If external storage cleanup fails, review the displayed error before retrying.
+
+### Tables and privacy limitations
+
+`docs/DATA_MAP.md` lists every ORM table, its content categories, purpose, and deletion/retention behavior, plus known open gaps. In particular, finite cleanup periods still need to be set for rate-limit counters, operational jobs, old export/deletion request rows, WhatsApp messages/consent history, and audit rows. Account deletion currently cascades payment/recovery rows; verify accounting and consumer-protection retention before production use. Provider backups/logs are outside the app's direct deletion control.
+
+### Legal and operational questions to confirm with a Kenyan lawyer or the ODPC
+
+This list is for review, not conclusions about what the law requires:
+
+1. Which entity is the data controller for the service and which service providers are processors/subprocessors? What written processing terms are needed?
+2. Does the operator or a customer organization need ODPC registration, and which registration category/details apply? Supply the correct company identity and public contact.
+3. What lawful bases and notice wording apply to account, chat, document, billing, WhatsApp, security, and AI processing? Is consent appropriate for each purpose, and what happens when it is withdrawn?
+4. Which providers process or store data outside Kenya, what locations/subprocessors are involved, and what transfer safeguards or assessments should be completed?
+5. Which retention periods and exceptions apply to source documents, chats, M-Pesa records, audit events, security logs, backups, WhatsApp messages, and deletion evidence?
+6. What identity checks, response timelines, exemptions, and appeal steps should apply to access, portability, correction, objection, restriction, and erasure requests?
+7. When is a DPIA appropriate, especially for student/child data, legal matters, sensitive personal data, or large-scale monitoring? What child/guardian safeguards and age checks are required?
+8. What breach-response plan, regulator/data-subject notifications, timing, evidence, and point of contact should the operator use?
+9. How should organization contracts describe access to shared content, private member chats, exports, retention, member departures, and organization deletion?
+10. What records must be retained for payments, tax/accounting, disputes, fraud prevention, and immutable audit evidence, and for how long?
+
+### Phase 7 deployment and verification checklist
+
+- [ ] Review and back up the database, then apply migration `0020` after `0019`; do not run this migration automatically against production without a deployment window.
+- [ ] Redeploy API and worker together. Confirm `AUTH_COOKIE_SECURE=true`, HTTPS origins, cookie credentials, and CSRF behavior. Keep all secrets server-side.
+- [ ] Set real approved policy version strings and fill company/contact/ODPC fields only after verification. Review the actual notices with counsel.
+- [ ] Verify TOTP enrollment, login with/without an authenticator code, CSRF mismatch rejection, throttles, lockout expiry, and secure cookie flags.
+- [ ] Request a personal export and verify ZIP contents contain only the user's personal files/private chats. Request an organization export and verify it omits other users' private chats. Confirm archive links expire and originals are readable.
+- [ ] Exercise account and organization deletion with test objects. Confirm database rows, vectors, Cloudinary originals and export archives are removed, while audit rows remain; make Cloudinary failure retry and verify the UI reports it.
+- [ ] Set a short retention value in a non-production organization and verify only older organization data is deleted by the daily job.
+- [ ] Try malformed-signature, expanded ZIP, macro DOCX, active-content PDF, encrypted PDF, and over-dimension image fixtures; verify the error is visible and no worker crash occurs.
+- [ ] Review audit payloads for unnecessary personal data and define cleanup for operational tables listed in `docs/DATA_MAP.md`.
+
+Tests are provided for personal/organization export scope isolation, deletion failure/retry behavior, rate limiting, TOTP, and malformed upload rejection. Local dependency availability may limit running the complete suite; live Cloudinary cleanup, OAuth, email, database migration, and production cookie/CSRF behavior still require configured staging services.
 

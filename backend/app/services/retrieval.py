@@ -41,6 +41,9 @@ def retrieve(db: Session, kb_id, question: str, limit: int = 5, query_vector=Non
             'keyword_candidates': 0,
             'vector_top_five': min(limit, len(vector_hits)),
             'keyword_top_five': 0,
+            'top_fusion_score': 1 / 61 if vector_hits else 0.0,
+            'agreeing_passages': 0,
+            'chunk_scores': [{'chunk_id': str(hit[0].id), 'score': 1 / (60 + rank), 'agrees': False} for rank, hit in enumerate(vector_hits[:limit], 1)],
         }
 
     # Reciprocal-rank fusion combines rankings with different score scales.
@@ -69,4 +72,7 @@ def retrieve(db: Session, kb_id, question: str, limit: int = 5, query_vector=Non
         'keyword_candidates': len(keyword_hits),
         'vector_top_five': sum(entry['vector'] for entry in top_five),
         'keyword_top_five': sum(entry['keyword'] for entry in top_five),
+        'top_fusion_score': ranked[0]['score'] if ranked else 0.0,
+        'agreeing_passages': sum(entry['vector'] and entry['keyword'] for entry in top_five),
+        'chunk_scores': [{'chunk_id': str(entry['hit'][0].id), 'score': entry['score'], 'agrees': bool(entry['vector'] and entry['keyword'])} for entry in ranked[:limit]],
     }

@@ -51,15 +51,75 @@ def run_job(job: Job):
     job_id = job.id
     payload = job.payload if isinstance(job.payload, dict) else {}
     document_id = payload.get('document_id')
+    if job.type == 'ingest_library_document':
+        from app.services.library_ingestion import ingest_library_document
+        with SessionLocal() as db:
+            ingest_library_document(db, UUID(str(payload['library_document_id'])), force=bool(payload.get('force')))
+        return
+    if job.type == 'record_library_update':
+        from app.models.entities import LibraryUpdate
+        from sqlalchemy import select
+        with SessionLocal() as db:
+            new_id = UUID(str(payload['new_document_id']))
+            exists = db.scalar(select(LibraryUpdate.id).where(LibraryUpdate.new_document_id == new_id).limit(1))
+            if not exists:
+                db.add(LibraryUpdate(collection_id=UUID(str(payload['collection_id'])), previous_document_id=UUID(str(payload['previous_document_id'])) if payload.get('previous_document_id') else None, new_document_id=new_id, change_kind=payload.get('change_kind', 'added')))
+                db.commit()
+        return
     if job.type == 'extract_events' and document_id:
         from app.services.event_extraction import extract_events_for_document
+        from app.models.entities import WhatsAppDocumentUpload
         with SessionLocal() as db:
             extract_events_for_document(db, UUID(str(document_id)))
+            upload = db.scalar(__import__('sqlalchemy').select(WhatsAppDocumentUpload).where(WhatsAppDocumentUpload.document_id == UUID(str(document_id))))
+            if upload:
+                db.add(Job(type='whatsapp_document_ready', payload={'document_id': str(document_id)}, max_attempts=4))
+                db.commit()
+        return
+    if job.type == 'whatsapp_document_ready':
+        from app.services.whatsapp_jobs import notify_document_ready
+        with SessionLocal() as db:
+            notify_document_ready(db, UUID(str(payload['document_id'])))
+        return
+    if job.type == 'whatsapp_document_failed':
+        from app.services.whatsapp_jobs import notify_document_failed
+        with SessionLocal() as db:
+            notify_document_failed(db, UUID(str(payload['document_id'])))
+        return
+    if job.type == 'sync_whatsapp_usage':
+        from app.services.reminders import reconcile_whatsapp_usage
+        with SessionLocal() as db:
+            reconcile_whatsapp_usage(db)
+        return
+    if job.type == 'export_user_data' or job.type == 'export_organization_data':
+        from app.services.privacy_jobs import process_export
+        with SessionLocal() as db:
+            process_export(db, UUID(str(payload['export_id'])))
+        return
+    if job.type == 'delete_user_data' or job.type == 'delete_organization_data':
+        from app.services.privacy_jobs import process_deletion
+        with SessionLocal() as db:
+            process_deletion(db, UUID(str(payload['deletion_id'])))
+        return
+    if job.type == 'enforce_organization_retention':
+        from app.services.privacy_jobs import enforce_organization_retention
+        with SessionLocal() as db:
+            enforce_organization_retention(db)
+        return
+    if job.type == 'cleanup_privacy_exports':
+        from app.services.privacy_jobs import cleanup_expired_exports
+        with SessionLocal() as db:
+            cleanup_expired_exports(db)
         return
     if job.type == 'send_due_reminders':
         from app.services.reminders import send_due_reminders
         with SessionLocal() as db:
             send_due_reminders(db)
+        return
+    if job.type == 'process_whatsapp_message':
+        from app.services.whatsapp_jobs import process_whatsapp_message
+        with SessionLocal() as db:
+            process_whatsapp_message(db, UUID(str(payload['message_id'])))
         return
     if job.type != 'index_document' or not document_id:
         raise ValueError('This processing job is not supported.')
@@ -115,6 +175,11 @@ def process_one() -> bool:
         logger.exception('Job %s failed: %s', job_id, safe_error)
         with SessionLocal() as db:
             result = fail_job(db, job_id, WORKER_ID, safe_error)
+            if result == 'failed' and job.type == 'index_document' and document_id:
+                from app.models.entities import WhatsAppDocumentUpload
+                if db.scalar(__import__('sqlalchemy').select(WhatsAppDocumentUpload.id).where(WhatsAppDocumentUpload.document_id == UUID(str(document_id)))):
+                    db.add(Job(type='whatsapp_document_failed', payload={'document_id': str(document_id)}, max_attempts=3))
+                    db.commit()
         logger.warning('Job %s result after error: %s.', job_id, result)
     finally:
         stop_heartbeat.set()
@@ -125,6 +190,8 @@ def process_one() -> bool:
 def main():
     logger.info('Starting durable document worker %s.', WORKER_ID)
     last_schedule_minute = None
+    last_usage_sync = None
+    last_privacy_day = None
     while True:
         try:
             current_minute = datetime.now(timezone.utc).replace(second=0, microsecond=0)
@@ -132,6 +199,17 @@ def main():
                 with SessionLocal() as db:
                     enqueue_reminder_minute(db, current_minute)
                 last_schedule_minute = current_minute
+            if last_usage_sync is None or (datetime.now(timezone.utc) - last_usage_sync).total_seconds() >= 600:
+                with SessionLocal() as db:
+                    db.add(Job(type='sync_whatsapp_usage', payload={'requested_at': datetime.now(timezone.utc).isoformat()}, max_attempts=3))
+                    db.commit()
+                last_usage_sync = datetime.now(timezone.utc)
+            if current_minute.date() != last_privacy_day:
+                with SessionLocal() as db:
+                    db.add(Job(type='enforce_organization_retention', payload={'scheduled_at':current_minute.isoformat()}, max_attempts=3))
+                    db.add(Job(type='cleanup_privacy_exports', payload={'scheduled_at':current_minute.isoformat()}, max_attempts=3))
+                    db.commit()
+                last_privacy_day = current_minute.date()
             if not process_one():
                 time.sleep(POLL_SECONDS)
         except KeyboardInterrupt:

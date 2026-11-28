@@ -15,27 +15,31 @@ from app.services.ocr import extract_document
 from app.services.chunking import chunk_pages
 from app.services.embeddings import iter_embedding_batches
 from app.core.config import max_extracted_chars, max_upload_mb
+from app.models.entities import User
+from app.services.permissions import require
 
 logger = logging.getLogger(__name__)
 
-def owned_kb(db, user_id, kb_id):
-    """Ensure the requested knowledge base belongs to the current user."""
-    try:
-        return get_knowledge_base(db, user_id, kb_id)
-    except KnowledgeBaseNotFoundError:
+def owned_kb(db, user_id, kb_id, action='read'):
+    """Compatibility wrapper delegating personal/org access to central policy."""
+    kb = db.get(KnowledgeBase, kb_id)
+    user = db.get(User, user_id)
+    if not kb or not user:
         raise HTTPException(404, 'Knowledge base not found')
+    return require(user, action, kb, db)
 
-def owned_document(db, user_id, kb_id, doc_id):
-    """Ensure the document belongs to a knowledge base owned by the user."""
-    owned_kb(db, user_id, kb_id)
+def owned_document(db, user_id, kb_id, doc_id, action='read'):
+    """Ensure document permission is inherited from its folder's owner/role."""
     d = db.scalar(select(Document).where(Document.id == doc_id, Document.knowledge_base_id == kb_id))
-    if not d:
-        raise HTTPException(404, 'Document not found')
+    if not d: raise HTTPException(404, 'Document not found')
+    owned_kb(db, user_id, kb_id, action)
     return d
 
 def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes, document_id=None, raise_on_error: bool = False):
     """Extract/index an already stored original; a durable worker calls this."""
-    owned_kb(db, user_id, kb_id)
+    kb = db.get(KnowledgeBase, kb_id)
+    if kb is None:
+        raise HTTPException(404, 'Knowledge base not found')
     name, mime = validate_upload(filename, data, max_upload_mb())
     if document_id is None:
         doc = Document(knowledge_base_id=kb_id, original_filename=name, content_type=mime, file_size_bytes=len(data), status='pending', chunk_count=0)
@@ -47,6 +51,8 @@ def process_upload(db: Session, user_id, kb_id, filename: str, data: bytes, docu
         # The user may have deleted the pending record before the worker began.
         if doc is None or doc.knowledge_base_id != kb_id:
             return None
+        if doc.uploaded_by_user_id and doc.uploaded_by_user_id != user_id:
+            raise HTTPException(404, 'Document not found')
     overall_started = perf_counter()
     processing_document_id = doc.id
     try:

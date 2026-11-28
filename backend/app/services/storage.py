@@ -26,15 +26,37 @@ def store_file(filename: str, data: bytes):
         result = cloudinary.uploader.upload(source, **options)
     return {'public_id': result['public_id'], 'resource_type': result['resource_type'], 'url': result['secure_url']}
 
-def delete_file(public_id: str, resource_type: str = 'raw'):
+def delete_file(public_id: str, resource_type: str = 'raw', asset_type: str = 'upload'):
     """Delete a previously stored original from Cloudinary."""
     s = get_settings()
     if not (s.CLOUDINARY_CLOUD_NAME and s.CLOUDINARY_API_KEY and s.CLOUDINARY_API_SECRET):
         raise RuntimeError('Cloudinary storage is not configured')
     cloudinary.config(cloud_name=s.CLOUDINARY_CLOUD_NAME, api_key=s.CLOUDINARY_API_KEY, api_secret=s.CLOUDINARY_API_SECRET, secure=True)
-    result = cloudinary.uploader.destroy(public_id, resource_type=resource_type, invalidate=True, timeout=30)
+    result = cloudinary.uploader.destroy(public_id, resource_type=resource_type, type=asset_type, invalidate=True, timeout=30)
     if result.get('result') not in {'ok', 'not found'}:
         raise RuntimeError('Cloudinary could not delete the stored document')
+
+def store_export_file(path: str, public_id: str):
+    """Store a privacy archive as an authenticated Cloudinary raw asset."""
+    s = get_settings()
+    if not (s.CLOUDINARY_CLOUD_NAME and s.CLOUDINARY_API_KEY and s.CLOUDINARY_API_SECRET):
+        raise RuntimeError('Cloudinary storage is not configured')
+    cloudinary.config(cloud_name=s.CLOUDINARY_CLOUD_NAME, api_key=s.CLOUDINARY_API_KEY,
+        api_secret=s.CLOUDINARY_API_SECRET, secure=True)
+    result = cloudinary.uploader.upload(path, resource_type='raw', type='authenticated',
+        folder='documind/privacy-exports', public_id=public_id, use_filename=False,
+        unique_filename=False, timeout=120)
+    return {'public_id':result['public_id'],'resource_type':result['resource_type']}
+
+def private_export_url(public_id: str) -> str:
+    """Return a short-lived signed download URL for a private export archive."""
+    import time
+    import cloudinary.utils
+    s = get_settings()
+    cloudinary.config(cloud_name=s.CLOUDINARY_CLOUD_NAME, api_key=s.CLOUDINARY_API_KEY,
+        api_secret=s.CLOUDINARY_API_SECRET, secure=True)
+    return cloudinary.utils.private_download_url(public_id, 'zip', resource_type='raw',
+        type='authenticated', attachment=True, expires_at=int(time.time()) + 300)
 
 def download_file(url: str, max_bytes: int) -> bytes:
     """Fetch a previously stored Cloudinary original with strict host/size limits."""

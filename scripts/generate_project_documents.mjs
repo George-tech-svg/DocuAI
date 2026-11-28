@@ -45,7 +45,7 @@ function makePdf(title, subtitle) {
 }
 
 const documentation = fs.readFileSync(path.join(outputDir, 'SYSTEM_DOCUMENTATION.md'), 'utf8');
-const functional = makePdf('DocuMind AI - System Documentation', 'Functional and operational guide | Updated 27 November 2026');
+const functional = makePdf('DocuMind AI - System Documentation', 'Functional and operational guide | Updated 28 November 2026');
 functional.addSection('System documentation', documentation);
 functional.save('SYSTEM_FUNCTIONAL_DOCUMENTATION.pdf');
 
@@ -61,7 +61,7 @@ function walk(directory) {
 }
 
 const files = walk(root).filter(file => !file.startsWith(outputDir + path.sep));
-const source = makePdf('DocuMind AI - Complete Source Reference', `Source code and project files | ${files.length} text files | Updated 27 November 2026`);
+const source = makePdf('DocuMind AI - Complete Source Reference', `Source code and project files | ${files.length} text files | Updated 28 November 2026`);
 for (const file of files.sort()) {
   const relative = path.relative(root, file).replaceAll(path.sep, '/');
   let contents = fs.readFileSync(file, 'utf8');
