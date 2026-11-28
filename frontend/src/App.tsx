@@ -1223,7 +1223,7 @@ export default function App() {
           <button disabled={isBusy}>{isBusy ? "Please wait..." : "Register first administrator"}</button>
           <p><button type="button" className="auth-toggle" onClick={() => { setShowAdminBootstrap(false); setErrorMessage(""); }}>Back to sign in</button></p>
         </form>
-        ) : <form className={`auth-card ${isRegistering ? "auth-card-register" : ""}`} noValidate onSubmit={handleAuthentication}>
+        ) : <form className={`auth-card ${isRegistering ? "auth-card-register" : ""}`} autoComplete="off" noValidate onSubmit={handleAuthentication}>
           <div className="brand">
             <BookOpen /> DocuMind <span>AI</span>
           </div>
@@ -1252,8 +1252,8 @@ export default function App() {
 
           {isRegistering ? (
             <div className="auth-register-fields">
-              <label>Full name<input required minLength={2} maxLength={150} autoComplete="name" placeholder="Your full name" value={fullName} onChange={(event) => setFullName(event.target.value)} /></label>
-              <label>Email address<input type="email" required autoComplete="email" placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+              <label>Full name<input required minLength={2} maxLength={150} autoComplete="off" placeholder="Your full name" value={fullName} onChange={(event) => setFullName(event.target.value)} /></label>
+              <label>Email address<input type="email" required autoComplete="off" placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
               <label>Password<input type="password" required minLength={8} maxLength={128} autoComplete="new-password" placeholder="At least 8 characters" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
               <label>Confirm password<input type="password" required minLength={8} maxLength={128} autoComplete="new-password" placeholder="Enter your password again" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label>
               {confirmPassword && password !== confirmPassword && (
@@ -1262,7 +1262,7 @@ export default function App() {
             </div>
           ) : (
             <>
-              <input type="email" required autoComplete="email" placeholder="Email address" value={email} onChange={(event) => setEmail(event.target.value)} />
+              <input type="email" required autoComplete="off" placeholder="Email address" value={email} onChange={(event) => setEmail(event.target.value)} />
               <input type="password" required autoComplete="current-password" placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} />
               <input type="text" inputMode="numeric" autoComplete="one-time-code" placeholder="Authenticator code (admins only, if enabled)" value={totpCode} onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, '').slice(0,6))} />
             </>
