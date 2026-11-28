@@ -3,5 +3,9 @@
 from fastapi import APIRouter
 from app.api.v1.endpoints import health, auth, knowledge_bases, documents, chat, admin, billing, events, library, organizations, whatsapp, privacy, business_tools
 api_router = APIRouter()
-for module in (health, auth, knowledge_bases, documents, chat, admin, billing, events, library, library.admin_router, organizations, whatsapp, privacy, business_tools, business_tools.admin_router):
+for module in (health, auth, knowledge_bases, documents, chat, admin, billing, events, library, organizations, whatsapp, privacy, business_tools):
     api_router.include_router(module.router)
+
+# These are already APIRouter instances, rather than endpoint modules.
+api_router.include_router(library.admin_router)
+api_router.include_router(business_tools.admin_router)

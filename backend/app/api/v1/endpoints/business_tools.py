@@ -16,7 +16,6 @@ import httpx
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
-from openpyxl import Workbook, load_workbook
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import func, literal_column, select
 from sqlalchemy.orm import Session
@@ -49,6 +48,19 @@ def _source_map(db: Session, document: Document, limit: int = 12):
         sources[key] = {'id':key, 'kind':'notice', 'document':document.original_filename,
             'page':chunk.page_number, 'quote':chunk.content[:2200]}
     return sources
+
+
+def _spreadsheet_library():
+    """Load the optional XLSX dependency only for spreadsheet workflows.
+
+    A packaging/cache issue with openpyxl must not prevent the entire FastAPI
+    application, especially authentication, from importing and serving.
+    """
+    try:
+        from openpyxl import Workbook, load_workbook
+    except ImportError as exc:
+        raise HTTPException(503, 'Excel support is temporarily unavailable. Please try again later.') from exc
+    return Workbook, load_workbook
 
 
 def _library_sources(db: Session, query: str, limit: int = 8):
@@ -440,6 +452,7 @@ def export_tool_run_pdf(run_id: UUID,user: User=Depends(current_user),db: Sessio
 def export_tool_run_xlsx(run_id: UUID,user: User=Depends(current_user),db: Session=Depends(get_db)):
     run=db.get(BusinessToolRun,run_id)
     if not run or run.user_id!=user.id: raise HTTPException(404,'Tool result not found.')
+    Workbook, _ = _spreadsheet_library()
     workbook=Workbook();sheet=workbook.active;sheet.title='Reviewed result'
     sheet.append(['Field','Value','Source','Source version','Page','Source quote'])
     def flatten(value,path=''):
@@ -526,6 +539,7 @@ def export_receipts_csv(user: User=Depends(current_user),db: Session=Depends(get
 
 @router.get('/receipts/export.xlsx')
 def export_receipts_xlsx(user: User=Depends(current_user),db: Session=Depends(get_db)):
+    Workbook, _ = _spreadsheet_library()
     workbook=Workbook();sheet=workbook.active;sheet.title='Receipts'
     sheet.append(['Supplier','Supplier PIN','Receipt date','Line items','VAT','Total','Payment method','Flags'])
     for row in _receipt_export_rows(db,user):
@@ -553,6 +567,7 @@ def _payroll_rows(filename: str, content: bytes):
                     raise HTTPException(400,'This spreadsheet expands beyond safe processing limits.')
                 if any('vbaproject.bin' in info.filename.lower() for info in infos): raise HTTPException(400,'Macro-enabled spreadsheets are not accepted.')
                 if z.testzip(): raise HTTPException(400,'The spreadsheet archive is damaged.')
+            _, load_workbook = _spreadsheet_library()
             workbook=load_workbook(io.BytesIO(content),read_only=True,data_only=True)
             sheet=workbook.active
             rows=[[cell for cell in row] for row in sheet.iter_rows(values_only=True)]
@@ -626,6 +641,7 @@ def _safe_cell(value):
 
 @router.post('/payroll/export.xlsx')
 def export_payroll_xlsx(data: PayrollExportRequest,_user: User=Depends(current_user)):
+    Workbook, _ = _spreadsheet_library()
     workbook=Workbook();summary=workbook.active;summary.title='Summary'
     summary.append(['Rows checked',data.result.rows_checked]);summary.append(['Rates used',', '.join(data.result.configured_rates_used)])
     summary.append(['Information',_safe_cell(data.result.information)])
